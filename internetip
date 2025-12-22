@@ -97,27 +97,33 @@ show_help() {
   cat <<EOT
 $SCRIPT_NAME $VERSION - Fetch and display public internet IP address
 
-Usage: $SCRIPT_NAME [options]
+Usage: $SCRIPT_NAME [command|options]
        source $SCRIPT_NAME  # Load get_internet_ip function
+
+Commands:
+  install             Install scripts to /usr/local/bin (requires root)
+  update              Git pull and reinstall (requires root)
+  uninstall           Remove scripts from /usr/local/bin (requires root)
+  seturl [URL]        Configure system-wide callback URL (requires root)
+  showurl             Show current callback URL configuration
+  unseturl            Remove system-wide URL configuration (requires root)
 
 Options:
   -s, -c, --call-url  Call callback URL after fetching IP
   -v, --verbose       Increase verbosity
   -q, --quiet         Suppress informational output
-  --install           Install scripts to /usr/local/bin (requires root)
-  --update            Git pull and reinstall (requires root)
-  --uninstall         Remove scripts from /usr/local/bin (requires root)
-  --set-url [URL]     Configure system-wide callback URL (requires root)
-  --show-url          Show current callback URL configuration
-  --unset-url         Remove system-wide URL configuration (requires root)
   -h, --help          Display this help
   -V, --version       Display version
 
+  Long options (--install, --set-url, etc.) are also supported.
+
 Environment:
-  INTERNETIP_CALL_URL  Callback URL template for -s option (set via --set-url)
+  INTERNETIP_CALL_URL  Callback URL template for -s option (set via seturl)
                        Currently ${INTERNETIP_CALL_URL@Q}.
                        Template variables: \$HOSTNAME \$GATEWAY_IP \$SCRIPT_NAME \$VERSION
-  GATEWAY_IP_FILE      Name of file containing current IP (def. $GATEWAY_IP_FILE)
+                       (The \$ prefix is optional: HOSTNAME works same as \$HOSTNAME)
+  INTERNETIP_PROFILE   Profile file for URL config (def. /etc/profile.d/internetip.sh)
+  GATEWAY_IP_FILE      File containing cached IP (def. $GATEWAY_IP_FILE)
 
 Exported Functions (when sourced):
   get_internet_ip   Fetch and validate public IP, returns via stdout
@@ -131,14 +137,14 @@ Notes:
 Examples:
   $SCRIPT_NAME                       # Display current public IP
   $SCRIPT_NAME -s                    # Fetch IP and call callback URL
-  $SCRIPT_NAME --show-url            # Show current URL configuration
+  $SCRIPT_NAME showurl               # Show current URL configuration
 
-  sudo $SCRIPT_NAME --install        # Install to /usr/local/bin
-  sudo $SCRIPT_NAME --update         # Update from git + reinstall
-  sudo $SCRIPT_NAME --uninstall      # Remove from /usr/local/bin
-  sudo $SCRIPT_NAME --set-url        # Configure callback URL interactively
-  sudo $SCRIPT_NAME --set-url 'https://example.com?host=\$HOSTNAME&ip=\$GATEWAY_IP'
-  sudo $SCRIPT_NAME --unset-url      # Remove URL configuration
+  sudo $SCRIPT_NAME install          # Install to /usr/local/bin
+  sudo $SCRIPT_NAME update           # Update from git + reinstall
+  sudo $SCRIPT_NAME uninstall        # Remove from /usr/local/bin
+  sudo $SCRIPT_NAME seturl           # Configure callback URL interactively
+  sudo $SCRIPT_NAME seturl='https://example.com?host=HOSTNAME&ip=GATEWAY_IP'
+  sudo $SCRIPT_NAME unseturl         # Remove URL configuration
 
   source $SCRIPT_NAME
   ip=\$(get_internet_ip)             # Use in scripts

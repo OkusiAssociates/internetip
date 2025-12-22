@@ -72,7 +72,7 @@ Behavior:
   - Requires root privileges (executable mode only)
   - Logs IP changes to syslog (local0.notice)
   - Calls internetip -s on change to notify remote server
-  - Stores current IP in $IPFILE
+  - Stores current IP in /tmp/internetip.txt
 
 Exit Codes:
   0   Success (IP checked)

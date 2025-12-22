@@ -15,18 +15,18 @@ All scripts follow the [BASH-CODING-STANDARD](https://github.com/Open-Technology
 ## Installation
 
 ```bash
-# Clone and install (one-liner)
+# Clone and install
 git clone https://github.com/OkusiAssociates/internetip.git
-sudo ./internetip/internetip --install
+sudo ./internetip/internetip install
 
 # Or from within the repo
-sudo ./internetip --install
+sudo ./internetip install
 
 # Update existing installation
-sudo internetip --update
+sudo internetip update
 
 # Uninstall
-sudo internetip --uninstall
+sudo internetip uninstall
 ```
 
 Installs symlinks to `/usr/local/bin` and bash completion to `/etc/bash_completion.d`.
@@ -41,17 +41,28 @@ internetip -s           # Fetch IP and call callback URL
 internetip -q           # Quiet mode (suppress info messages)
 internetip -v           # Verbose mode
 internetip -sv          # Combined options
-internetip --show-url   # Show current URL configuration
+internetip showurl      # Show current URL configuration
 internetip -h           # Show help
 
 # Administration (requires root)
-sudo internetip --install    # Install to /usr/local/bin
-sudo internetip --update     # Git pull + reinstall
-sudo internetip --uninstall  # Remove from /usr/local/bin
-sudo internetip --set-url    # Configure callback URL interactively
-sudo internetip --set-url 'https://example.com?host=$HOSTNAME&ip=$GATEWAY_IP'
-sudo internetip --unset-url  # Remove URL configuration
+sudo internetip install              # Install to /usr/local/bin
+sudo internetip update               # Git pull + reinstall
+sudo internetip uninstall            # Remove from /usr/local/bin
+sudo internetip seturl               # Configure callback URL interactively
+sudo internetip seturl='https://example.com?host=HOSTNAME&ip=GATEWAY_IP'
+sudo internetip unseturl             # Remove URL configuration
 ```
+
+**Commands:**
+
+| Command | Description |
+|---------|-------------|
+| `install` | Install scripts to /usr/local/bin (requires root) |
+| `update` | Git pull and reinstall (requires root) |
+| `uninstall` | Remove scripts from /usr/local/bin (requires root) |
+| `seturl [URL]` | Configure system-wide callback URL (requires root) |
+| `showurl` | Show current callback URL configuration |
+| `unseturl` | Remove system-wide URL configuration (requires root) |
 
 **Options:**
 
@@ -60,37 +71,46 @@ sudo internetip --unset-url  # Remove URL configuration
 | `-s, -c, --call-url` | Call callback URL after fetching IP |
 | `-v, --verbose` | Increase verbosity |
 | `-q, --quiet` | Suppress informational output |
-| `--install` | Install scripts to /usr/local/bin (requires root) |
-| `--update` | Git pull and reinstall (requires root) |
-| `--uninstall` | Remove scripts from /usr/local/bin (requires root) |
-| `--set-url [URL]` | Configure system-wide callback URL (requires root) |
-| `--show-url` | Show current callback URL configuration |
-| `--unset-url` | Remove system-wide URL configuration (requires root) |
+| `-h, --help` | Display help |
+| `-V, --version` | Display version |
+
+Long options (`--install`, `--set-url`, etc.) are also supported.
 
 **URL Configuration:**
 
-The callback URL supports template variables that are expanded at runtime:
+The callback URL supports template variables expanded at runtime. The `$` prefix is optional (`HOSTNAME` works the same as `$HOSTNAME`):
 
 | Variable | Description | Example |
 |----------|-------------|---------|
-| `$HOSTNAME` | System hostname | `webserver01` |
-| `$GATEWAY_IP` | Fetched public IP | `203.0.113.45` |
-| `$SCRIPT_NAME` | Script name | `internetip` |
-| `$VERSION` | Script version | `2.3.0` |
+| `HOSTNAME` | System hostname | `webserver01` |
+| `GATEWAY_IP` | Fetched public IP | `203.0.113.45` |
+| `SCRIPT_NAME` | Script name | `internetip` |
+| `VERSION` | Script version | `2.3.0` |
 
 ```bash
 # Configure system-wide (writes to /etc/profile.d/ and systemd)
-sudo internetip --set-url
-# Enter: https://example.com/ip.php?host=$HOSTNAME&ip=$GATEWAY_IP
+sudo internetip seturl
+# Enter: https://example.com/ip.php?host=HOSTNAME&ip=GATEWAY_IP
+
+# Or pass URL directly
+sudo internetip seturl='https://example.com/ip.php?host=HOSTNAME&ip=GATEWAY_IP'
 
 # View current configuration
-internetip --show-url
+internetip showurl
 
 # Remove configuration
-sudo internetip --unset-url
+sudo internetip unseturl
 ```
 
-When run as root, caches result to `/tmp/GatewayIP`.
+**Environment Variables:**
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `INTERNETIP_CALL_URL` | Callback URL template | *(none)* |
+| `INTERNETIP_PROFILE` | Profile file for URL config | `/etc/profile.d/internetip.sh` |
+| `GATEWAY_IP_FILE` | Cached IP file | `/tmp/GatewayIP` |
+
+When run as root, caches result to `GATEWAY_IP_FILE`.
 
 **Output icons:** Messages use status icons for clarity: ◉ info, ▲ warn, ✓ success, ✗ error.
 
@@ -187,7 +207,7 @@ sudo bats tests/            # Root-required tests
 - Sourced mode (function exports, no side effects)
 - Root vs non-root behavior
 - Install/update/uninstall operations
-- URL configuration (--set-url, --show-url, --unset-url)
+- URL configuration (seturl, showurl, unseturl)
 - Template variable expansion
 - Real network calls to ipecho.net
 

@@ -224,16 +224,16 @@ load 'helpers/setup'
   [[ "$output" == *"--install"* ]]
 }
 
-@test "help shows --update option" {
+@test "help shows update command" {
   run "$BATS_TEST_DIRNAME/../internetip" --help
   [ "$status" -eq 0 ]
-  [[ "$output" == *"--update"* ]]
+  [[ "$output" == *"update"* ]]
 }
 
-@test "help shows --uninstall option" {
+@test "help shows uninstall command" {
   run "$BATS_TEST_DIRNAME/../internetip" --help
   [ "$status" -eq 0 ]
-  [[ "$output" == *"--uninstall"* ]]
+  [[ "$output" == *"uninstall"* ]]
 }
 
 @test "--install requires root" {
@@ -330,16 +330,16 @@ load 'helpers/setup'
   [[ "$output" == *"Configure system-wide callback URL"* ]]
 }
 
-@test "help shows --show-url option" {
+@test "help shows showurl command" {
   run "$BATS_TEST_DIRNAME/../internetip" --help
   [ "$status" -eq 0 ]
-  [[ "$output" == *"--show-url"* ]]
+  [[ "$output" == *"showurl"* ]]
 }
 
-@test "help shows --unset-url option" {
+@test "help shows unseturl command" {
   run "$BATS_TEST_DIRNAME/../internetip" --help
   [ "$status" -eq 0 ]
-  [[ "$output" == *"--unset-url"* ]]
+  [[ "$output" == *"unseturl"* ]]
 }
 
 @test "help shows template variables documentation" {

@@ -2,13 +2,23 @@
 # Bash completion for internetip, validip, and watchip scripts
 
 _internetip() {
-  local cur opts
+  local cur
   COMPREPLY=()
   cur="${COMP_WORDS[COMP_CWORD]}"
-  opts="-s -c --call-url -v --verbose -q --quiet --install --update --uninstall -h --help -V --version"
 
+  # Commands (subcommand style)
+  local commands="install update uninstall seturl showurl unseturl"
+  # Options
+  local opts="-s -c --call-url -v --verbose -q --quiet -h --help -V --version"
+  # Long option equivalents of commands
+  local long_cmds="--install --update --uninstall --set-url --show-url --unset-url"
+
+  # If current word starts with -, complete options
   if [[ $cur == -* ]]; then
-    mapfile -t COMPREPLY < <(compgen -W "$opts" -- "$cur")
+    mapfile -t COMPREPLY < <(compgen -W "$opts $long_cmds" -- "$cur")
+  # If no command yet given (first non-option arg), complete commands
+  elif ((COMP_CWORD == 1)); then
+    mapfile -t COMPREPLY < <(compgen -W "$commands" -- "$cur")
   fi
 }
 
