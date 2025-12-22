@@ -61,18 +61,35 @@ Usage: $SCRIPT_NAME [options]
 
 Options:
   -q, --quiet   Suppress output when IP unchanged
-  -V, --version Display version
   -h, --help    Display this help
+  -V, --version Display version
 
-Requires root privileges. Logs IP changes to syslog (local0.notice).
-Stores current IP in '$IPFILE'.
+Exported Functions (when sourced):
+  watch_ip [file]   Compare stored vs current IP
+                    Returns: "changed:old:new" or "unchanged:ip"
+
+Behavior:
+  - Requires root privileges (executable mode only)
+  - Logs IP changes to syslog (local0.notice)
+  - Calls internetip -s on change to notify remote server
+  - Stores current IP in $IPFILE
+
+Exit Codes:
+  0   Success (IP checked)
+  1   Error fetching or processing IP
+  22  Invalid option (EINVAL)
 
 Examples:
   sudo $SCRIPT_NAME              # Check for IP change
-  sudo crontab -e                # Add: */5 * * * * /usr/local/bin/$SCRIPT_NAME -q
+  sudo $SCRIPT_NAME -q           # Quiet mode (for cron)
 
+  # Cron job (check every 5 minutes)
+  */5 * * * * /usr/local/bin/$SCRIPT_NAME -q
+
+  # Sourced mode (no root required)
   source $SCRIPT_NAME
-  result=\$(watch_ip)            # Returns "changed:old:new" or "unchanged:ip"
+  result=\$(watch_ip /tmp/myapp_ip.txt)
+  [[ \$result == changed:* ]] && echo "IP changed!"
 EOT
 }
 

@@ -21,7 +21,7 @@ fi
 
 get_internet_ip() {
   local -- ip
-  ip=$(timeout 10s /usr/bin/wget -q -O- 'http://ipecho.net/plain' 2>/dev/null | head -n1)
+  ip=$(curl -sf --max-time 10 'http://ipecho.net/plain' 2>/dev/null | head -n1)
   valid_ip "$ip" || return 1
   echo "$ip"
 }
@@ -35,18 +35,23 @@ declare -fx get_internet_ip internetip
 set -euo pipefail
 shopt -s inherit_errexit shift_verbose extglob nullglob
 
-declare -- VERSION='2.0.0'
-declare -- SCRIPT_PATH SCRIPT_NAME GATEWAY_IP_FILE
-SCRIPT_PATH="$(readlink -en -- "$0")"
+VERSION='2.0.1'
+SCRIPT_PATH="$(realpath -e -- "$0")"
+SCRIPT_DIR="${SCRIPT_PATH%/*}"
 SCRIPT_NAME="${SCRIPT_PATH##*/}"
 GATEWAY_IP_FILE=/tmp/GatewayIP
+#shellcheck disable=SC2034
+readonly -- VERSION SCRIPT_PATH SCRIPT_DIR SCRIPT_NAME GATEWAY_IP_FILE
+
+# Configurable callback URL (can be overridden via environment)
+: "${INTERNETIP_CALL_URL:=https://okusiassociates.com/ip.php?1=**Farkle420**&2=$HOSTNAME}"
 
 # Color support for stderr
 #shellcheck disable=SC2015,SC2034
 if [[ -t 2 ]]; then
-  declare -- RED=$'\033[0;31m' NOCOLOR=$'\033[0m'
+  declare -r RED=$'\033[0;31m' NOCOLOR=$'\033[0m'
 else
-  declare -- RED='' NOCOLOR=''
+  declare -r RED='' NOCOLOR=''
 fi
 
 error() {
@@ -65,31 +70,43 @@ die() {
 
 show_help() {
   cat <<EOT
-$SCRIPT_NAME $VERSION - Display Internet IP for current host
+$SCRIPT_NAME $VERSION - Fetch and display public internet IP address
 
 Usage: $SCRIPT_NAME [options]
        source $SCRIPT_NAME  # Load get_internet_ip function
 
 Options:
-  -s            Store IP to ips.okusi for hostname tracking
-  -V, --version Display version
+  -s            Call callback URL after fetching IP
   -h, --help    Display this help
+  -V, --version Display version
 
-Also caches result in '$GATEWAY_IP_FILE' when run as root.
+Environment:
+  INTERNETIP_CALL_URL  Callback URL for -s option (default: okusiassociates.com)
+
+Exported Functions (when sourced):
+  get_internet_ip   Fetch and validate public IP, returns via stdout
+  valid_ip <ip>     Validate IPv4 address format
+
+Notes:
+  - Uses ipecho.net to detect public IP
+  - Caches result to $GATEWAY_IP_FILE when run as root
+  - Uses curl with 10-second timeout
 
 Examples:
-  $SCRIPT_NAME                    # Display current public IP
-  $SCRIPT_NAME -s                 # Store IP to remote server
+  $SCRIPT_NAME                       # Display current public IP
+  $SCRIPT_NAME -s                    # Fetch IP and call callback URL
+  INTERNETIP_CALL_URL=http://example.com/ip $SCRIPT_NAME -s
+
   source $SCRIPT_NAME
-  ip=\$(get_internet_ip)          # Use function in scripts
+  ip=\$(get_internet_ip)             # Use in scripts
+  valid_ip "\$ip" && echo "Valid"
 EOT
 }
 
-store_ip_remote() {
-  >&2 echo "Storing internetip to ips.okusi for host '${HOSTNAME}'"
-  /usr/bin/wget --no-check-certificate --timeout=10s --dns-timeout=10s -qO- \
-    "https://okusiassociates.com/ip.php?1=**Farkle420**&2=$HOSTNAME" >/dev/null \
-    || die 1 'Error storing IP to remote server'
+internetip_call_url() {
+  >&2 echo "Calling ${INTERNETIP_CALL_URL@Q}"
+  curl -sfk --max-time 10 "$INTERNETIP_CALL_URL" >/dev/null \
+    || die 1 "Error calling ${INTERNETIP_CALL_URL@Q}"
 }
 
 main() {
@@ -98,9 +115,9 @@ main() {
   # Parse options
   while (($#)); do
     case $1 in
-      -h|--help)    show_help; exit 0 ;;
-      -V|--version) echo "$SCRIPT_NAME $VERSION"; exit 0 ;;
-      -s)           store_ip_remote ;;
+      -h|--help)    show_help; return 0 ;;
+      -V|--version) echo "$SCRIPT_NAME $VERSION"; return 0 ;;
+      -s)           internetip_call_url ;;
       -*)           die 22 "Unknown option ${1@Q}. Try: $SCRIPT_NAME --help" ;;
       *)            die 22 "Unexpected argument ${1@Q}" ;;
     esac
@@ -108,10 +125,10 @@ main() {
   done
 
   # Fetch and validate IP
-  gatewayip=$(get_internet_ip) || die 1 "Failed to retrieve valid IP"
+  gatewayip=$(get_internet_ip) || die 1 'Failed to retrieve valid IP'
 
   # Cache to file if root
-  if [[ $USER == root ]]; then
+  if ((EUID == 0)); then
     echo "$gatewayip" > "$GATEWAY_IP_FILE"
     chmod 664 "$GATEWAY_IP_FILE"
   fi

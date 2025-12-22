@@ -27,16 +27,31 @@ if (($#)); then
       cat <<EOT
 $SCRIPT_NAME $VERSION - Validate IPv4 address format
 
-Usage: $SCRIPT_NAME <ip_address>
+Usage: $SCRIPT_NAME [options] <ip_address>
        source $SCRIPT_NAME  # Load valid_ip function
+
+Options:
+  -h, --help    Display this help
+  -V, --version Display version
+
+Exported Functions (when sourced):
+  valid_ip <ip>   Returns 0 if valid IPv4, 1 if invalid
+
+Validation:
+  - Checks format: N.N.N.N where N is 0-255
+  - Validates each octet is within range
+
+Exit Codes:
+  0   Valid IPv4 address
+  1   Invalid IPv4 address
+  22  Invalid option (EINVAL)
 
 Examples:
   $SCRIPT_NAME 192.168.1.1 && echo valid || echo invalid
-  if valid_ip "\$ip"; then echo "Valid"; fi
+  $SCRIPT_NAME 256.1.1.1 && echo valid || echo invalid
 
-Exit codes:
-  0  Valid IPv4 address
-  1  Invalid IPv4 address
+  source $SCRIPT_NAME
+  if valid_ip "\$ip"; then echo "Valid"; fi
 EOT
       exit 0
       ;;
