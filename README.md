@@ -6,7 +6,7 @@ A Bash utility toolkit for detecting, validating, and monitoring public IP addre
 
 | Script | Version | Purpose | Exported Function |
 |--------|---------|---------|-------------------|
-| `internetip` | 2.0.1 | Fetch and display public IP | `get_internet_ip` |
+| `internetip` | 2.1.0 | Fetch and display public IP | `get_internet_ip` |
 | `validip` | 1.1.0 | Validate IPv4 address format | `valid_ip` |
 | `watchip` | 2.0.0 | Monitor for IP changes | `watch_ip` |
 
@@ -15,14 +15,21 @@ All scripts follow the [BASH-CODING-STANDARD](https://github.com/Open-Technology
 ## Installation
 
 ```bash
-# Symlink to /usr/local/bin
-sudo ln -s "$(pwd)/internetip" /usr/local/bin/
-sudo ln -s "$(pwd)/validip" /usr/local/bin/
-sudo ln -s "$(pwd)/watchip" /usr/local/bin/
+# Clone and install (one-liner)
+git clone https://github.com/OkusiAssociates/internetip.git
+sudo ./internetip/internetip --install
 
-# Enable bash completion
-echo "source $(pwd)/internetip.bash_completion" >> ~/.bashrc
+# Or from within the repo
+sudo ./internetip --install
+
+# Update existing installation
+sudo internetip --update
+
+# Uninstall
+sudo internetip --uninstall
 ```
+
+Installs symlinks to `/usr/local/bin` and bash completion to `/etc/bash_completion.d`.
 
 ## Usage
 
@@ -32,6 +39,11 @@ echo "source $(pwd)/internetip.bash_completion" >> ~/.bashrc
 internetip              # Display current public IP
 internetip -s           # Fetch IP and call callback URL
 internetip -h           # Show help
+
+# Administration (requires root)
+sudo internetip --install    # Install to /usr/local/bin
+sudo internetip --update     # Git pull + reinstall
+sudo internetip --uninstall  # Remove from /usr/local/bin
 ```
 
 Environment variables:

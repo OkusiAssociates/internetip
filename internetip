@@ -35,7 +35,7 @@ declare -fx get_internet_ip internetip
 set -euo pipefail
 shopt -s inherit_errexit shift_verbose extglob nullglob
 
-VERSION='2.0.1'
+VERSION='2.1.0'
 SCRIPT_PATH="$(realpath -e -- "$0")"
 SCRIPT_DIR="${SCRIPT_PATH%/*}"
 SCRIPT_NAME="${SCRIPT_PATH##*/}"
@@ -77,6 +77,9 @@ Usage: $SCRIPT_NAME [options]
 
 Options:
   -s            Call callback URL after fetching IP
+  --install     Install scripts to /usr/local/bin (requires root)
+  --update      Git pull and reinstall (requires root)
+  --uninstall   Remove scripts from /usr/local/bin (requires root)
   -h, --help    Display this help
   -V, --version Display version
 
@@ -95,7 +98,10 @@ Notes:
 Examples:
   $SCRIPT_NAME                       # Display current public IP
   $SCRIPT_NAME -s                    # Fetch IP and call callback URL
-  INTERNETIP_CALL_URL=http://example.com/ip $SCRIPT_NAME -s
+
+  sudo $SCRIPT_NAME --install        # Install to /usr/local/bin
+  sudo $SCRIPT_NAME --update         # Update from git + reinstall
+  sudo $SCRIPT_NAME --uninstall      # Remove from /usr/local/bin
 
   source $SCRIPT_NAME
   ip=\$(get_internet_ip)             # Use in scripts
@@ -109,6 +115,54 @@ internetip_call_url() {
     || die 1 "Error calling ${INTERNETIP_CALL_URL@Q}"
 }
 
+do_install() {
+  ((EUID == 0)) || die 1 "Install requires root. Try: sudo $SCRIPT_NAME --install"
+
+  local -a scripts=(internetip validip watchip)
+  local -- script
+
+  for script in "${scripts[@]}"; do
+    [[ -x $SCRIPT_DIR/$script ]] || die 1 "Script not found: $SCRIPT_DIR/$script"
+    ln -sf "$SCRIPT_DIR/$script" "/usr/local/bin/$script"
+    echo "Installed: /usr/local/bin/$script -> $SCRIPT_DIR/$script"
+  done
+
+  # Bash completion
+  if [[ -d /etc/bash_completion.d && -f $SCRIPT_DIR/internetip.bash_completion ]]; then
+    ln -sf "$SCRIPT_DIR/internetip.bash_completion" "/etc/bash_completion.d/internetip"
+    echo "Installed: /etc/bash_completion.d/internetip"
+  fi
+
+  echo "Installation complete"
+}
+
+do_update() {
+  ((EUID == 0)) || die 1 "Update requires root. Try: sudo $SCRIPT_NAME --update"
+
+  cd "$SCRIPT_DIR" || die 1 "Cannot cd to $SCRIPT_DIR"
+
+  if [[ ! -d .git ]]; then
+    die 1 "Not a git repository: $SCRIPT_DIR"
+  fi
+
+  git pull || die 1 "Git pull failed"
+  echo "Updated from git"
+
+  # Reinstall if already installed
+  if [[ -L /usr/local/bin/internetip ]]; then
+    do_install
+  fi
+}
+
+do_uninstall() {
+  ((EUID == 0)) || die 1 "Uninstall requires root. Try: sudo $SCRIPT_NAME --uninstall"
+
+  rm -f /usr/local/bin/{internetip,validip,watchip}
+  rm -f /etc/bash_completion.d/internetip
+
+  echo "Uninstalled internetip, validip, watchip from /usr/local/bin"
+}
+
 main() {
   local -- gatewayip
 
@@ -118,6 +172,9 @@ main() {
       -h|--help)    show_help; return 0 ;;
       -V|--version) echo "$SCRIPT_NAME $VERSION"; return 0 ;;
       -s)           internetip_call_url ;;
+      --install)    do_install; return 0 ;;
+      --update)     do_update; return 0 ;;
+      --uninstall)  do_uninstall; return 0 ;;
       -*)           die 22 "Unknown option ${1@Q}. Try: $SCRIPT_NAME --help" ;;
       *)            die 22 "Unexpected argument ${1@Q}" ;;
     esac
