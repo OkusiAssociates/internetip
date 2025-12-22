@@ -1,0 +1,123 @@
+#!/usr/bin/env bash
+# Fetch and validate public internet IP address
+
+# Source valid_ip function if not already available
+if ! declare -F valid_ip &>/dev/null; then
+  #shellcheck disable=SC1091 source=validip
+  source "${BASH_SOURCE[0]%/*}/validip" 2>/dev/null || {
+    # Inline fallback if validip not found
+    valid_ip() {
+      local -- ip="${1:-}"
+      [[ $ip =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]] || return 1
+      local -- IFS='.'
+      local -ai octets
+      #shellcheck disable=SC2206
+      octets=( $ip )
+      [[ ${octets[0]} -le 255 && ${octets[1]} -le 255 \
+          && ${octets[2]} -le 255 && ${octets[3]} -le 255 ]]
+    }
+  }
+fi
+
+get_internet_ip() {
+  local -- ip
+  ip=$(timeout 10s /usr/bin/wget -q -O- 'http://ipecho.net/plain' 2>/dev/null | head -n1)
+  valid_ip "$ip" || return 1
+  echo "$ip"
+}
+internetip() { get_internet_ip "$@"; }
+declare -fx get_internet_ip internetip
+
+
+# Check if the script is being sourced or executed directly
+[[ "${BASH_SOURCE[0]}" == "${0}" ]] || return 0
+#!/bin/bash #semantic ----------------------------------------------------------
+set -euo pipefail
+shopt -s inherit_errexit shift_verbose extglob nullglob
+
+declare -- VERSION='2.0.0'
+declare -- SCRIPT_PATH SCRIPT_NAME GATEWAY_IP_FILE
+SCRIPT_PATH="$(readlink -en -- "$0")"
+SCRIPT_NAME="${SCRIPT_PATH##*/}"
+GATEWAY_IP_FILE=/tmp/GatewayIP
+
+# Color support for stderr
+#shellcheck disable=SC2015,SC2034
+if [[ -t 2 ]]; then
+  declare -- RED=$'\033[0;31m' NOCOLOR=$'\033[0m'
+else
+  declare -- RED='' NOCOLOR=''
+fi
+
+error() {
+  local -- msg
+  for msg in "$@"; do
+    >&2 printf '%s: %serror%s: %s\n' "$SCRIPT_NAME" "$RED" "$NOCOLOR" "$msg"
+  done
+}
+
+die() {
+  local -i exitcode=1
+  (($#)) && { exitcode=$1; shift; }
+  (($#)) && error "$@"
+  exit "$exitcode"
+}
+
+show_help() {
+  cat <<EOT
+$SCRIPT_NAME $VERSION - Display Internet IP for current host
+
+Usage: $SCRIPT_NAME [options]
+       source $SCRIPT_NAME  # Load get_internet_ip function
+
+Options:
+  -s            Store IP to ips.okusi for hostname tracking
+  -V, --version Display version
+  -h, --help    Display this help
+
+Also caches result in '$GATEWAY_IP_FILE' when run as root.
+
+Examples:
+  $SCRIPT_NAME                    # Display current public IP
+  $SCRIPT_NAME -s                 # Store IP to remote server
+  source $SCRIPT_NAME
+  ip=\$(get_internet_ip)          # Use function in scripts
+EOT
+}
+
+store_ip_remote() {
+  >&2 echo "Storing internetip to ips.okusi for host '${HOSTNAME}'"
+  /usr/bin/wget --no-check-certificate --timeout=10s --dns-timeout=10s -qO- \
+    "https://okusiassociates.com/ip.php?1=**Farkle420**&2=$HOSTNAME" >/dev/null \
+    || die 1 'Error storing IP to remote server'
+}
+
+main() {
+  local -- gatewayip
+
+  # Parse options
+  while (($#)); do
+    case $1 in
+      -h|--help)    show_help; exit 0 ;;
+      -V|--version) echo "$SCRIPT_NAME $VERSION"; exit 0 ;;
+      -s)           store_ip_remote ;;
+      -*)           die 22 "Unknown option ${1@Q}. Try: $SCRIPT_NAME --help" ;;
+      *)            die 22 "Unexpected argument ${1@Q}" ;;
+    esac
+    shift
+  done
+
+  # Fetch and validate IP
+  gatewayip=$(get_internet_ip) || die 1 "Failed to retrieve valid IP"
+
+  # Cache to file if root
+  if [[ $USER == root ]]; then
+    echo "$gatewayip" > "$GATEWAY_IP_FILE"
+    chmod 664 "$GATEWAY_IP_FILE"
+  fi
+
+  echo "$gatewayip"
+}
+
+main "$@"
+#fin

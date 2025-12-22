@@ -1,0 +1,116 @@
+#!/usr/bin/env bash
+# Monitor and log public IP address changes
+
+# Source get_internet_ip function if not already available
+if ! declare -F get_internet_ip &>/dev/null; then
+  #shellcheck disable=SC1091 source=internetip
+  source "${BASH_SOURCE[0]%/*}"/internetip 2>/dev/null || {
+    >&2 echo 'watchip: error: Cannot source internetip module'
+    #shellcheck disable=SC2317
+    return 1 2>/dev/null || exit 1
+  }
+fi
+
+watch_ip() {
+  local -- ipfile="${1:-/tmp/internetip.txt}"
+  local -- oldip curip
+
+  # First run: fetch once, store, return (no comparison needed)
+  if [[ ! -f $ipfile ]]; then
+    curip=$(get_internet_ip) || return 1
+    echo "$curip" > "$ipfile"
+    echo "unchanged:$curip"
+    return 0
+  fi
+
+  # Subsequent runs: read stored, fetch current, compare
+  oldip=$(<"$ipfile")
+  curip=$(get_internet_ip) || return 1
+
+  if [[ $oldip != "$curip" ]]; then
+    echo "$curip" > "$ipfile"
+    echo "changed:$oldip:$curip"
+  else
+    echo "unchanged:$curip"
+  fi
+}
+declare -fx watch_ip
+
+# Check if the script is being sourced or executed directly
+[[ "${BASH_SOURCE[0]}" == "${0}" ]] || return 0
+#!/bin/bash #semantic ----------------------------------------------------------
+set -euo pipefail
+shopt -s inherit_errexit shift_verbose extglob nullglob
+
+declare -r VERSION='2.0.0'
+SCRIPT_PATH="$(realpath -e -- "$0")"
+SCRIPT_NAME="${SCRIPT_PATH##*/}"
+IPFILE=/tmp/internetip.txt
+declare -r SCRIPT_PATH SCRIPT_NAME IPFILE
+
+msg_sys() { logger -t "$SCRIPT_NAME" -p local0.notice "$@"; echo "$@"; }
+msg_err() { logger -t "$SCRIPT_NAME" -p local0.err "$@"; >&2 echo "$@"; }
+msg_die() { msg_err "$@"; exit 1; }
+
+show_help() {
+  cat <<EOT
+$SCRIPT_NAME $VERSION - Monitor and log public IP address changes
+
+Usage: $SCRIPT_NAME [options]
+       source $SCRIPT_NAME  # Load watch_ip function
+
+Options:
+  -q, --quiet   Suppress output when IP unchanged
+  -V, --version Display version
+  -h, --help    Display this help
+
+Requires root privileges. Logs IP changes to syslog (local0.notice).
+Stores current IP in '$IPFILE'.
+
+Examples:
+  sudo $SCRIPT_NAME              # Check for IP change
+  sudo crontab -e                # Add: */5 * * * * /usr/local/bin/$SCRIPT_NAME -q
+
+  source $SCRIPT_NAME
+  result=\$(watch_ip)            # Returns "changed:old:new" or "unchanged:ip"
+EOT
+}
+
+main() {
+  local -- quiet=0 result oldip curip
+
+  # Parse options
+  while (($#)); do
+    case $1 in
+      -h|--help)    show_help; return 0 ;;
+      -V|--version) echo "$SCRIPT_NAME $VERSION"; return 0 ;;
+      -q|--quiet)   quiet=1 ;;
+      -*)           msg_die "Unknown option ${1@Q}. Try: $SCRIPT_NAME --help" ;;
+      *)            msg_die "Unexpected argument ${1@Q}" ;;
+    esac
+    shift
+  done
+
+  # Require root
+  ((EUID == 0)) || msg_die "$SCRIPT_NAME must be run as root"
+
+  # Watch for changes
+  result=$(watch_ip "$IPFILE") || msg_die 'Error checking IP'
+
+  if [[ $result == changed:* ]]; then
+    # Parse result: changed:oldip:newip
+    oldip="${result#changed:}"
+    curip="${oldip#*:}"
+    oldip="${oldip%%:*}"
+    # Store to remote and log
+    internetip -s >/dev/null 2>&1 || true
+    msg_sys "IP changed from $oldip to $curip"
+  else
+    # unchanged:ip
+    curip="${result#unchanged:}"
+    ((quiet)) || echo "IP unchanged: $curip"
+  fi
+}
+
+main "$@"
+#fin

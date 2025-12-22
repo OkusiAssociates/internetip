@@ -1,0 +1,40 @@
+#!/bin/bash
+# Bash completion for internetip, validip, and watchip scripts
+
+_internetip() {
+  local cur opts
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  opts="-s -h --help -V --version"
+
+  if [[ $cur == -* ]]; then
+    mapfile -t COMPREPLY < <(compgen -W "$opts" -- "$cur")
+  fi
+}
+
+_validip() {
+  local cur opts
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  opts="-h --help -V --version"
+
+  if [[ $cur == -* ]]; then
+    mapfile -t COMPREPLY < <(compgen -W "$opts" -- "$cur")
+  fi
+}
+
+_watchip() {
+  local cur opts
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  opts="-q --quiet -h --help -V --version"
+
+  if [[ $cur == -* ]]; then
+    mapfile -t COMPREPLY < <(compgen -W "$opts" -- "$cur")
+  fi
+}
+
+complete -F _internetip internetip
+complete -F _validip validip
+complete -F _watchip watchip
+#fin

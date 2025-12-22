@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# Validate IPv4 address format
+
+valid_ip() {
+  local -- ip="${1:-}"
+  [[ $ip =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]] || return 1
+  local -- IFS='.'
+  local -ai octets
+  #shellcheck disable=SC2206
+  octets=( $ip )
+  [[ ${octets[0]} -le 255 && ${octets[1]} -le 255 \
+      && ${octets[2]} -le 255 && ${octets[3]} -le 255 ]]
+}
+declare -fx valid_ip
+
+# Check if the script is being sourced or executed directly
+[[ "${BASH_SOURCE[0]}" == "${0}" ]] || return 0
+#!/bin/bash #semantic ----------------------------------------------------------
+set -euo pipefail
+shopt -s inherit_errexit shift_verbose extglob nullglob
+
+declare -- VERSION='1.1.0' SCRIPT_NAME='validip'
+
+if (($#)); then
+  case $1 in
+    -h|--help)
+      cat <<EOT
+$SCRIPT_NAME $VERSION - Validate IPv4 address format
+
+Usage: $SCRIPT_NAME <ip_address>
+       source $SCRIPT_NAME  # Load valid_ip function
+
+Examples:
+  $SCRIPT_NAME 192.168.1.1 && echo valid || echo invalid
+  if valid_ip "\$ip"; then echo "Valid"; fi
+
+Exit codes:
+  0  Valid IPv4 address
+  1  Invalid IPv4 address
+EOT
+      exit 0
+      ;;
+    -V|--version)
+      echo "$SCRIPT_NAME $VERSION"
+      exit 0
+      ;;
+    -*)
+      >&2 echo "$SCRIPT_NAME: ✗ Unknown option ${1@Q}"
+      exit 22
+      ;;
+  esac
+fi
+
+valid_ip "$1"
+#fin
