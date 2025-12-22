@@ -35,7 +35,7 @@ declare -fx get_internet_ip internetip
 set -euo pipefail
 shopt -s inherit_errexit shift_verbose extglob nullglob
 
-VERSION='2.1.0'
+VERSION='2.2.0'
 SCRIPT_PATH="$(realpath -e -- "$0")"
 SCRIPT_DIR="${SCRIPT_PATH%/*}"
 SCRIPT_NAME="${SCRIPT_PATH##*/}"
@@ -46,27 +46,33 @@ readonly -- VERSION SCRIPT_PATH SCRIPT_DIR SCRIPT_NAME GATEWAY_IP_FILE
 # Configurable callback URL (can be overridden via environment)
 : "${INTERNETIP_CALL_URL:=https://okusiassociates.com/ip.php?1=**Farkle420**&2=$HOSTNAME}"
 
-# Color support for stderr
-#shellcheck disable=SC2015,SC2034
-if [[ -t 2 ]]; then
-  declare -r RED=$'\033[0;31m' NOCOLOR=$'\033[0m'
+declare -i VERBOSE=1
+# Color definitions
+if [[ -t 1 && -t 2 ]]; then
+  readonly -- RED=$'\033[0;31m' GREEN=$'\033[0;32m' YELLOW=$'\033[0;33m' CYAN=$'\033[0;36m' BOLD=$'\033[1m' NC=$'\033[0m'
 else
-  declare -r RED='' NOCOLOR=''
+  VERBOSE=0
+  readonly -- RED='' GREEN='' YELLOW='' CYAN='' BOLD='' NC=''
 fi
-
-error() {
-  local -- msg
-  for msg in "$@"; do
-    >&2 printf '%s: %serror%s: %s\n' "$SCRIPT_NAME" "$RED" "$NOCOLOR" "$msg"
-  done
+# Utility functions
+_msg() {
+  local -- status="${FUNCNAME[1]}" prefix="$SCRIPT_NAME:" msg
+  case "$status" in
+    vecho)   : ;;
+    info)    prefix+=" ${CYAN}◉${NC}" ;;
+    warn)    prefix+=" ${YELLOW}▲${NC}" ;;
+    success) prefix+=" ${GREEN}✓${NC}" ;;
+    error)   prefix+=" ${RED}✗${NC}" ;;
+  esac
+  for msg in "$@"; do printf '%s %s\n' "$prefix" "$msg"; done
 }
+vecho() { ((VERBOSE)) || return 0; _msg "$@"; }
+info() { ((VERBOSE)) || return 0; >&2 _msg "$@"; }
+warn() { ((VERBOSE)) || return 0; >&2 _msg "$@"; }
+success() { ((VERBOSE)) || return 0; >&2 _msg "$@" || return 0; }
+error() { >&2 _msg "$@"; }
+die() { (($# > 1)) && error "${@:2}"; exit "${1:-0}"; }
 
-die() {
-  local -i exitcode=1
-  (($#)) && { exitcode=$1; shift; }
-  (($#)) && error "$@"
-  exit "$exitcode"
-}
 
 show_help() {
   cat <<EOT
@@ -76,12 +82,14 @@ Usage: $SCRIPT_NAME [options]
        source $SCRIPT_NAME  # Load get_internet_ip function
 
 Options:
-  -s            Call callback URL after fetching IP
-  --install     Install scripts to /usr/local/bin (requires root)
-  --update      Git pull and reinstall (requires root)
-  --uninstall   Remove scripts from /usr/local/bin (requires root)
-  -h, --help    Display this help
-  -V, --version Display version
+  -s, -c, --call-url  Call callback URL after fetching IP
+  -v, --verbose       Increase verbosity
+  -q, --quiet         Suppress informational output
+  --install           Install scripts to /usr/local/bin (requires root)
+  --update            Git pull and reinstall (requires root)
+  --uninstall         Remove scripts from /usr/local/bin (requires root)
+  -h, --help          Display this help
+  -V, --version       Display version
 
 Environment:
   INTERNETIP_CALL_URL  Callback URL for -s option (default: okusiassociates.com)
@@ -110,7 +118,7 @@ EOT
 }
 
 internetip_call_url() {
-  >&2 echo "Calling ${INTERNETIP_CALL_URL@Q}"
+  info "Calling ${INTERNETIP_CALL_URL@Q}"
   curl -sfk --max-time 10 "$INTERNETIP_CALL_URL" >/dev/null \
     || die 1 "Error calling ${INTERNETIP_CALL_URL@Q}"
 }
@@ -124,16 +132,16 @@ do_install() {
   for script in "${scripts[@]}"; do
     [[ -x $SCRIPT_DIR/$script ]] || die 1 "Script not found: $SCRIPT_DIR/$script"
     ln -sf "$SCRIPT_DIR/$script" "/usr/local/bin/$script"
-    echo "Installed: /usr/local/bin/$script -> $SCRIPT_DIR/$script"
+    info "Installed: /usr/local/bin/$script -> $SCRIPT_DIR/$script"
   done
 
   # Bash completion
   if [[ -d /etc/bash_completion.d && -f $SCRIPT_DIR/internetip.bash_completion ]]; then
     ln -sf "$SCRIPT_DIR/internetip.bash_completion" "/etc/bash_completion.d/internetip"
-    echo "Installed: /etc/bash_completion.d/internetip"
+    info "Installed: /etc/bash_completion.d/internetip"
   fi
 
-  echo "Installation complete"
+  success "Installation complete"
 }
 
 do_update() {
@@ -141,12 +149,10 @@ do_update() {
 
   cd "$SCRIPT_DIR" || die 1 "Cannot cd to $SCRIPT_DIR"
 
-  if [[ ! -d .git ]]; then
-    die 1 "Not a git repository: $SCRIPT_DIR"
-  fi
+  [[ -d .git ]] || die 1 "Not a git repository: $SCRIPT_DIR"
 
   git pull || die 1 "Git pull failed"
-  echo "Updated from git"
+  info 'Updated from git'
 
   # Reinstall if already installed
   if [[ -L /usr/local/bin/internetip ]]; then
@@ -160,21 +166,27 @@ do_uninstall() {
   rm -f /usr/local/bin/{internetip,validip,watchip}
   rm -f /etc/bash_completion.d/internetip
 
-  echo "Uninstalled internetip, validip, watchip from /usr/local/bin"
+  info "Uninstalled internetip, validip, watchip from /usr/local/bin"
 }
 
 main() {
   local -- gatewayip
+  local -i call_url=0
 
   # Parse options
   while (($#)); do
     case $1 in
-      -h|--help)    show_help; return 0 ;;
-      -V|--version) echo "$SCRIPT_NAME $VERSION"; return 0 ;;
-      -s)           internetip_call_url ;;
+      -s|-c|--call-url)
+                    call_url=1 ;;
       --install)    do_install; return 0 ;;
       --update)     do_update; return 0 ;;
       --uninstall)  do_uninstall; return 0 ;;
+      -v|--verbose) VERBOSE+=1 ;;
+      -q|--quiet)   VERBOSE=0 ;;
+      -V|--version) echo "$SCRIPT_NAME $VERSION"; return 0 ;;
+      -h|--help)    show_help; return 0 ;;
+      -[svqVh]*) #shellcheck disable=SC2046
+                    set -- '' $(printf -- '-%c ' $(grep -o . <<<"${1:1}")) "${@:2}" ;;
       -*)           die 22 "Unknown option ${1@Q}. Try: $SCRIPT_NAME --help" ;;
       *)            die 22 "Unexpected argument ${1@Q}" ;;
     esac
@@ -191,6 +203,8 @@ main() {
   fi
 
   echo "$gatewayip"
+
+  ((call_url==0)) || internetip_call_url
 }
 
 main "$@"

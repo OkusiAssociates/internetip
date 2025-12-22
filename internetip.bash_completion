@@ -5,7 +5,7 @@ _internetip() {
   local cur opts
   COMPREPLY=()
   cur="${COMP_WORDS[COMP_CWORD]}"
-  opts="-s --install --update --uninstall -h --help -V --version"
+  opts="-s -c --call-url -v --verbose -q --quiet --install --update --uninstall -h --help -V --version"
 
   if [[ $cur == -* ]]; then
     mapfile -t COMPREPLY < <(compgen -W "$opts" -- "$cur")
