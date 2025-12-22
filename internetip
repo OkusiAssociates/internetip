@@ -42,10 +42,12 @@ SCRIPT_DIR="${SCRIPT_PATH%/*}"
 SCRIPT_NAME="${SCRIPT_PATH##*/}"
 
 GATEWAY_IP_FILE=${GATEWAY_IP_FILE:-/tmp/GatewayIP}
+INTERNETIP_PROFILE=${INTERNETIP_PROFILE:-/etc/profile.d/"$SCRIPT_NAME".sh}
 #shellcheck disable=SC2034
-readonly -- VERSION SCRIPT_PATH SCRIPT_DIR SCRIPT_NAME GATEWAY_IP_FILE
+readonly -- VERSION SCRIPT_PATH SCRIPT_DIR SCRIPT_NAME GATEWAY_IP_FILE INTERNETIP_PROFILE
 
-declare -- GATEWAY_IP=$(head -n1 "$GATEWAY_IP_FILE" 2>/dev/null || true)
+declare -- GATEWAY_IP
+GATEWAY_IP=$(head -n1 "$GATEWAY_IP_FILE" 2>/dev/null || true)
 
 # Callback URL template (set via --set-url, no default)
 : "${INTERNETIP_CALL_URL:=}"
@@ -62,7 +64,6 @@ fi
 _msg() {
   local -- status="${FUNCNAME[1]}" prefix="$SCRIPT_NAME:" msg
   case "$status" in
-    vecho)   : ;;
     info)    prefix+=" ${CYAN}◉${NC}" ;;
     warn)    prefix+=" ${YELLOW}▲${NC}" ;;
     success) prefix+=" ${GREEN}✓${NC}" ;;
@@ -110,7 +111,9 @@ Options:
 
 Environment:
   INTERNETIP_CALL_URL  Callback URL template for -s option (set via --set-url)
+                       Currently ${INTERNETIP_CALL_URL@Q}.
                        Template variables: \$HOSTNAME \$GATEWAY_IP \$SCRIPT_NAME \$VERSION
+  GATEWAY_IP_FILE      Name of file containing current IP (def. $GATEWAY_IP_FILE)
 
 Exported Functions (when sourced):
   get_internet_ip   Fetch and validate public IP, returns via stdout
@@ -118,7 +121,7 @@ Exported Functions (when sourced):
 
 Notes:
   - Uses ipecho.net to detect public IP
-  - Caches result to $GATEWAY_IP_FILE when run as root
+  - Caches result to ${GATEWAY_IP_FILE@Q} when run as root
   - Uses curl with 10-second timeout
 
 Examples:
@@ -139,25 +142,30 @@ EOT
 }
 
 internetip_call_url() {
-  [[ -n ${INTERNETIP_CALL_URL:-} ]] \
-    || die 1 "INTERNETIP_CALL_URL not set. Run: sudo $SCRIPT_NAME --set-url"
+  if [[ -z ${INTERNETIP_CALL_URL:-} ]]; then
+    #shellcheck source=/dev/null
+    source "$INTERNETIP_PROFILE" 2>/dev/null || true
+    [[ -n ${INTERNETIP_CALL_URL:-} ]] \
+        || die 1 'INTERNETIP_CALL_URL not set.' "Run: sudo $SCRIPT_NAME --set-url"
+  fi
+
   local -- url
   url=$(expand_url_template "$INTERNETIP_CALL_URL" "$1")
   info "Calling ${url@Q}"
   curl -sfk --max-time 10 "$url" >/dev/null \
-    || die 1 "Error calling ${url@Q}"
+      || die 1 "Error calling ${url@Q}"
 }
 
 do_install() {
-  ((EUID == 0)) || die 1 "Install requires root. Try: sudo $SCRIPT_NAME --install"
+  ((EUID == 0)) || die 1 'Install requires root.' "Run: sudo $SCRIPT_NAME --install"
 
   local -a scripts=(internetip validip watchip)
   local -- script
 
   for script in "${scripts[@]}"; do
-    [[ -x $SCRIPT_DIR/$script ]] || die 1 "Script not found: $SCRIPT_DIR/$script"
+    [[ -x $SCRIPT_DIR/$script ]] || die 1 "Script not found '$SCRIPT_DIR/$script'"
     ln -sf "$SCRIPT_DIR"/"$script" /usr/local/bin/"$script"
-    info "Installed: /usr/local/bin/$script -> $SCRIPT_DIR/$script"
+    info "Installed: /usr/local/bin/$script -> '$SCRIPT_DIR/$script'"
   done
 
   # Bash completion
@@ -170,11 +178,11 @@ do_install() {
 }
 
 do_update() {
-  ((EUID == 0)) || die 1 "Update requires root. Try: sudo $SCRIPT_NAME --update"
+  ((EUID == 0)) || die 1 'Update requires root.' "Run: sudo $SCRIPT_NAME --update"
 
-  cd "$SCRIPT_DIR" || die 1 "Cannot cd to $SCRIPT_DIR"
+  cd "$SCRIPT_DIR" || die 1 "Cannot cd to ${SCRIPT_DIR@Q}"
 
-  [[ -d .git ]] || die 1 "Not a git repository: $SCRIPT_DIR"
+  [[ -d .git ]] || die 1 "Not a git repository ${SCRIPT_DIR@Q}"
 
   git pull || die 1 'Git pull failed'
   info 'Updated from git'
@@ -186,7 +194,7 @@ do_update() {
 }
 
 do_uninstall() {
-  ((EUID == 0)) || die 1 "Uninstall requires root. Try: sudo $SCRIPT_NAME --uninstall"
+  ((EUID == 0)) || die 1 'Uninstall requires root.' "Run: sudo $SCRIPT_NAME --uninstall"
 
   rm -f /usr/local/bin/{internetip,validip,watchip}
   rm -f /etc/bash_completion.d/internetip
@@ -195,7 +203,7 @@ do_uninstall() {
 }
 
 do_set_url() {
-  ((EUID == 0)) || die 1 "Requires root. Try: sudo $SCRIPT_NAME --set-url"
+  ((EUID == 0)) || die 1 'Requires root.' "Run: sudo $SCRIPT_NAME --set-url"
 
   local -- url current="${INTERNETIP_CALL_URL:-}"
   #shellcheck disable=SC2016  # Intentionally showing literal variable names
@@ -208,13 +216,13 @@ do_set_url() {
     url="$current"
   fi
 
-  # Write /etc/profile.d/internetip.sh (stores template unexpanded)
-  cat > /etc/profile.d/internetip.sh << EOF
+  # Write "$INTERNETIP_PROFILE" (stores template unexpanded)
+  cat > "$INTERNETIP_PROFILE" << EOF
 # internetip callback URL template - variables expanded at runtime
 export INTERNETIP_CALL_URL='$url'
 EOF
-  chmod 644 /etc/profile.d/internetip.sh
-  info 'Written: /etc/profile.d/internetip.sh'
+  chmod 644 "$INTERNETIP_PROFILE"
+  info "Written: $INTERNETIP_PROFILE"
 
   # Write systemd generator - escape $ to prevent expansion when generator runs
   mkdir -p /etc/systemd/system-environment-generators
@@ -229,22 +237,22 @@ EOF
   systemctl daemon-reload
   info 'Ran: systemctl daemon-reload'
 
-  success 'URL template configured. Re-login or run: source /etc/profile.d/internetip.sh'
+  success "URL template configured. Re-login or run: source $INTERNETIP_PROFILE"
 }
 
 do_show_url() {
   local -- template="${INTERNETIP_CALL_URL:-<not set>}"
   echo "Template: $template"
   echo "Expanded: $(expand_url_template "$template" '<IP>')"
-  if [[ -f /etc/profile.d/internetip.sh ]]; then
-    echo "System:   $(grep -oP "INTERNETIP_CALL_URL='\\K[^']+" /etc/profile.d/internetip.sh 2>/dev/null || echo '<not configured>')"
+  if [[ -f "$INTERNETIP_PROFILE" ]]; then
+    echo "System:   $(grep -oP "INTERNETIP_CALL_URL='\\K[^']+" "$INTERNETIP_PROFILE" 2>/dev/null || echo '<not configured>')"
   fi
 }
 
 do_unset_url() {
-  ((EUID == 0)) || die 1 "Requires root. Try: sudo $SCRIPT_NAME --unset-url"
+  ((EUID == 0)) || die 1 'Requires root.' "Run: sudo $SCRIPT_NAME --unset-url"
 
-  rm -f /etc/profile.d/internetip.sh
+  rm -f "$INTERNETIP_PROFILE"
   rm -f /etc/systemd/system-environment-generators/internetip
   systemctl daemon-reload 2>/dev/null || true
 
@@ -271,7 +279,7 @@ main() {
       -h|--help)    show_help; return 0 ;;
       -[svqVh]*) #shellcheck disable=SC2046
                     set -- '' $(printf -- '-%c ' $(grep -o . <<<"${1:1}")) "${@:2}" ;;
-      -*)           die 22 "Unknown option ${1@Q}. Try: $SCRIPT_NAME --help" ;;
+      -*)           die 22 "Unknown option ${1@Q}." "Run: $SCRIPT_NAME --help" ;;
       *)            die 22 "Unexpected argument ${1@Q}" ;;
     esac
     shift

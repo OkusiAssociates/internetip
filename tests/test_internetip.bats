@@ -406,8 +406,9 @@ load 'helpers/setup'
 }
 
 @test "-s fails gracefully when INTERNETIP_CALL_URL not set" {
-  # Unset the variable and test
-  run env -u INTERNETIP_CALL_URL "$BATS_TEST_DIRNAME/../internetip" -s
+  # Use non-existent profile file to test "not configured" scenario
+  run env -u INTERNETIP_CALL_URL INTERNETIP_PROFILE=/nonexistent/profile.sh \
+      "$BATS_TEST_DIRNAME/../internetip" -s
   [ "$status" -eq 1 ]
   [[ "$output" == *"INTERNETIP_CALL_URL not set"* ]]
   [[ "$output" == *"--set-url"* ]]
