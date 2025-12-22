@@ -319,4 +319,151 @@ load 'helpers/setup'
   [[ "$output" == *"Updated from git"* ]] || [[ "$output" == *"Already up"* ]]
 }
 
+# =============================================================================
+# URL Configuration Tests
+# =============================================================================
+
+@test "help shows --set-url option" {
+  run "$BATS_TEST_DIRNAME/../internetip" --help
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"--set-url"* ]]
+  [[ "$output" == *"Configure system-wide callback URL"* ]]
+}
+
+@test "help shows --show-url option" {
+  run "$BATS_TEST_DIRNAME/../internetip" --help
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"--show-url"* ]]
+}
+
+@test "help shows --unset-url option" {
+  run "$BATS_TEST_DIRNAME/../internetip" --help
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"--unset-url"* ]]
+}
+
+@test "help shows template variables documentation" {
+  run "$BATS_TEST_DIRNAME/../internetip" --help
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'$HOSTNAME'* ]]
+  [[ "$output" == *'$GATEWAY_IP'* ]]
+}
+
+@test "--set-url requires root" {
+  skip_if_root
+  run "$BATS_TEST_DIRNAME/../internetip" --set-url
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"Requires root"* ]]
+}
+
+@test "--unset-url requires root" {
+  skip_if_root
+  run "$BATS_TEST_DIRNAME/../internetip" --unset-url
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"Requires root"* ]]
+}
+
+@test "--show-url works without root" {
+  skip_if_root
+  run "$BATS_TEST_DIRNAME/../internetip" --show-url
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Template:"* ]]
+}
+
+@test "--show-url displays template and expanded form" {
+  run "$BATS_TEST_DIRNAME/../internetip" --show-url
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Template:"* ]]
+  [[ "$output" == *"Expanded:"* ]]
+}
+
+@test "--show-url expands HOSTNAME in template" {
+  # Set a test URL with $HOSTNAME and verify expansion shows hostname
+  export INTERNETIP_CALL_URL='https://example.com?host=$HOSTNAME'
+  run "$BATS_TEST_DIRNAME/../internetip" --show-url
+  [ "$status" -eq 0 ]
+  # Template line should show literal $HOSTNAME
+  [[ "$output" == *'Template: https://example.com?host=$HOSTNAME'* ]]
+  # Expanded line should NOT contain literal $HOSTNAME
+  expanded_line=$(echo "$output" | grep "^Expanded:")
+  [[ "$expanded_line" != *'$HOSTNAME'* ]]
+}
+
+@test "--show-url expands GATEWAY_IP placeholder" {
+  export INTERNETIP_CALL_URL='https://example.com?ip=$GATEWAY_IP'
+  run "$BATS_TEST_DIRNAME/../internetip" --show-url
+  [ "$status" -eq 0 ]
+  # Expanded line should show <IP> placeholder (no actual IP without fetch)
+  [[ "$output" == *"<IP>"* ]]
+}
+
+@test "--show-url shows both template and expanded forms" {
+  export INTERNETIP_CALL_URL='https://example.com?v=$VERSION'
+  run "$BATS_TEST_DIRNAME/../internetip" --show-url
+  [ "$status" -eq 0 ]
+  # Expanded should contain actual version number
+  [[ "$output" == *"2."* ]]
+}
+
+@test "-s fails gracefully when INTERNETIP_CALL_URL not set" {
+  # Unset the variable and test
+  run env -u INTERNETIP_CALL_URL "$BATS_TEST_DIRNAME/../internetip" -s
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"INTERNETIP_CALL_URL not set"* ]]
+  [[ "$output" == *"--set-url"* ]]
+}
+
+@test "--set-url creates profile.d file" {
+  skip_if_not_root
+  # Clean up first
+  rm -f /etc/profile.d/internetip.sh
+
+  # Run with input
+  echo 'https://example.com/test?host=$HOSTNAME' | \
+    "$BATS_TEST_DIRNAME/../internetip" --set-url
+
+  # Verify file created
+  [ -f /etc/profile.d/internetip.sh ]
+  grep -q 'INTERNETIP_CALL_URL' /etc/profile.d/internetip.sh
+}
+
+@test "--set-url creates systemd generator" {
+  skip_if_not_root
+  # Clean up first
+  rm -f /etc/systemd/system-environment-generators/internetip
+
+  # Run with input
+  echo 'https://example.com/test?host=$HOSTNAME' | \
+    "$BATS_TEST_DIRNAME/../internetip" --set-url
+
+  # Verify file created
+  [ -f /etc/systemd/system-environment-generators/internetip ]
+  [ -x /etc/systemd/system-environment-generators/internetip ]
+}
+
+@test "--unset-url removes configuration files" {
+  skip_if_not_root
+  # Create files first
+  echo 'https://example.com/test' | \
+    "$BATS_TEST_DIRNAME/../internetip" --set-url 2>/dev/null || true
+
+  run "$BATS_TEST_DIRNAME/../internetip" --unset-url
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"URL configuration removed"* ]]
+
+  # Verify files removed
+  [ ! -f /etc/profile.d/internetip.sh ]
+  [ ! -f /etc/systemd/system-environment-generators/internetip ]
+}
+
+@test "--set-url escapes dollar signs in systemd generator" {
+  skip_if_not_root
+  # Run with input containing $HOSTNAME
+  echo 'https://example.com?host=$HOSTNAME' | \
+    "$BATS_TEST_DIRNAME/../internetip" --set-url
+
+  # Verify generator has escaped $ (literal \$HOSTNAME)
+  grep -q '\$HOSTNAME' /etc/systemd/system-environment-generators/internetip
+}
+
 #fin

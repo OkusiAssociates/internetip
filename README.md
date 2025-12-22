@@ -177,15 +177,17 @@ sudo bats tests/            # Root-required tests
 | Test File | Tests | Coverage |
 |-----------|-------|----------|
 | `test_validip.bats` | 20 | IP validation, CLI options, sourcing |
-| `test_internetip.bats` | 38 | Network fetch, caching, verbose/quiet, install/update/uninstall |
+| `test_internetip.bats` | 54 | Network fetch, caching, verbose/quiet, install/update/uninstall, URL config |
 | `test_watchip.bats` | 21 | Change detection, file ops, root check |
 
-**Total: 79 tests** covering:
+**Total: 95 tests** covering:
 - Valid/invalid IP formats
 - Executable mode (options, exit codes)
 - Sourced mode (function exports, no side effects)
 - Root vs non-root behavior
 - Install/update/uninstall operations
+- URL configuration (--set-url, --show-url, --unset-url)
+- Template variable expansion
 - Real network calls to ipecho.net
 
 ### Test Structure
