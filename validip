@@ -11,15 +11,18 @@ valid_ip() {
   [[ ${octets[0]} -le 255 && ${octets[1]} -le 255 \
       && ${octets[2]} -le 255 && ${octets[3]} -le 255 ]]
 }
-declare -fx valid_ip
+valid_ip4() { valid_ip "$@"; }
+valid_ip6() { return 1; }
+declare -fx valid_ip valid_ip4 valid_ip6
 
 # Check if the script is being sourced or executed directly
 [[ "${BASH_SOURCE[0]}" == "${0}" ]] || return 0
 #!/bin/bash #semantic ----------------------------------------------------------
 set -euo pipefail
-shopt -s inherit_errexit shift_verbose extglob nullglob
+shopt -s inherit_errexit extglob nullglob
 
-declare -- VERSION='1.1.0' SCRIPT_NAME='validip'
+declare -r VERSION='1.1.0'
+declare -r SCRIPT_NAME='validip'
 
 if (($#)); then
   case $1 in
