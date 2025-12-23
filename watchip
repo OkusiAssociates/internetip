@@ -15,11 +15,11 @@ watch_ip() {
   local -- ipfile="${1:-/tmp/internetip.txt}"
   local -- oldip curip
 
-  # First run: fetch once, store, return (no comparison needed)
+  # First run: fetch once, store, return
   if [[ ! -f $ipfile ]]; then
     curip=$(get_internet_ip) || return 1
     echo "$curip" > "$ipfile"
-    echo "unchanged:$curip"
+    echo "initial:$curip"
     return 0
   fi
 
@@ -42,7 +42,7 @@ declare -fx watch_ip
 set -euo pipefail
 shopt -s inherit_errexit extglob nullglob
 
-declare -r VERSION='2.0.0'
+declare -r VERSION='2.1.0'
 SCRIPT_PATH="$(realpath -e -- "$0")"
 SCRIPT_NAME="${SCRIPT_PATH##*/}"
 
@@ -142,7 +142,11 @@ main() {
   # Watch for changes
   result=$(watch_ip "$IPFILE") || msg_die 'Error checking IP'
 
-  if [[ $result == changed:* ]]; then
+  if [[ $result == initial:* ]]; then
+    # First run: initial:ip
+    curip="${result#initial:}"
+    msg_sys "Initial IP: $curip"
+  elif [[ $result == changed:* ]]; then
     # Parse result: changed:oldip:newip
     oldip="${result#changed:}"
     curip="${oldip#*:}"

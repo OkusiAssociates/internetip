@@ -17,12 +17,12 @@ load 'helpers/mocks'
   [ -f "$ipfile" ]
 }
 
-@test "watch_ip returns unchanged on first run" {
+@test "watch_ip returns initial on first run" {
   source "$BATS_TEST_DIRNAME/../watchip"
-  ipfile="$TEST_TMPDIR/first_run_unchanged.txt"
+  ipfile="$TEST_TMPDIR/first_run_initial.txt"
   run watch_ip "$ipfile"
   [ "$status" -eq 0 ]
-  [[ "$output" == unchanged:* ]]
+  [[ "$output" == initial:* ]]
 }
 
 @test "watch_ip stores valid IP on first run" {
@@ -73,9 +73,21 @@ load 'helpers/mocks'
 # watch_ip() Output Format Tests
 # =============================================================================
 
+@test "watch_ip initial format is initial:ip" {
+  source "$BATS_TEST_DIRNAME/../watchip"
+  ipfile="$TEST_TMPDIR/format_initial.txt"
+  run watch_ip "$ipfile"
+  [ "$status" -eq 0 ]
+  # Format: initial:IP
+  [[ "$output" =~ ^initial:[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]
+}
+
 @test "watch_ip unchanged format is unchanged:ip" {
   source "$BATS_TEST_DIRNAME/../watchip"
   ipfile="$TEST_TMPDIR/format_unchanged.txt"
+  # First run to create file
+  watch_ip "$ipfile" >/dev/null
+  # Second run should return unchanged
   run watch_ip "$ipfile"
   [ "$status" -eq 0 ]
   # Format: unchanged:IP
@@ -221,6 +233,16 @@ load 'helpers/mocks'
   [[ "$(cat "$logfile")" == *"IP changed"* ]]
 }
 
+@test "watchip logs initial IP on first run" {
+  local logfile="$TEST_TMPDIR/initial_log_$$.log"
+  local ipfile="$TEST_TMPDIR/initial_ip_$$.txt"
+  rm -f "$logfile" "$ipfile"
+  LOGFILE="$logfile" IPFILE="$ipfile" run "$BATS_TEST_DIRNAME/../watchip"
+  [ "$status" -eq 0 ]
+  [ -f "$logfile" ]
+  [[ "$(cat "$logfile")" == *"Initial IP:"* ]]
+}
+
 # =============================================================================
 # Sourced Mode Tests
 # =============================================================================
@@ -249,7 +271,7 @@ load 'helpers/mocks'
   ipfile="$TEST_TMPDIR/noroot_test.txt"
   run watch_ip "$ipfile"
   [ "$status" -eq 0 ]
-  [[ "$output" == unchanged:* ]] || [[ "$output" == changed:* ]]
+  [[ "$output" == initial:* ]] || [[ "$output" == unchanged:* ]] || [[ "$output" == changed:* ]]
 }
 
 @test "watch_ip accepts custom file path" {
