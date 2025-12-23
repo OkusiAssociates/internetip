@@ -40,17 +40,41 @@ declare -fx watch_ip
 [[ "${BASH_SOURCE[0]}" == "${0}" ]] || return 0
 #!/bin/bash #semantic ----------------------------------------------------------
 set -euo pipefail
-shopt -s inherit_errexit shift_verbose extglob nullglob
+shopt -s inherit_errexit extglob nullglob
 
 declare -r VERSION='2.0.0'
 SCRIPT_PATH="$(realpath -e -- "$0")"
 SCRIPT_NAME="${SCRIPT_PATH##*/}"
-IPFILE=/tmp/internetip.txt
-declare -r SCRIPT_PATH SCRIPT_NAME IPFILE
 
-msg_sys() { logger -t "$SCRIPT_NAME" -p local0.notice "$@"; echo "$@"; }
-msg_err() { logger -t "$SCRIPT_NAME" -p local0.err "$@"; >&2 echo "$@"; }
+declare -- IPFILE=${IPFILE:-/tmp/internetip.txt}
+
+# LOGFILE with fallback: /var/log if writable, else ~/
+declare -- LOGFILE=${LOGFILE:-}
+if [[ -z $LOGFILE ]]; then
+  LOGFILE="/var/log/$SCRIPT_NAME.log"
+  if ! touch "$LOGFILE" 2>/dev/null; then
+    LOGFILE="$HOME/.$SCRIPT_NAME.log"
+  fi
+fi
+
+log_msg() {
+  local -- ts
+  ts=$(date '+%Y-%m-%d %H:%M:%S')
+  echo "$ts $USER: $*" >> "$LOGFILE" 2>/dev/null || true
+}
+
+msg_sys() { ((EUID)) || logger -t "$SCRIPT_NAME" -p local0.notice "$@"; log_msg "$@"; echo "$@"; }
+msg_err() { ((EUID)) || logger -t "$SCRIPT_NAME" -p local0.err "ERROR: $*"; log_msg "ERROR: $*"; >&2 echo "$@"; }
 msg_die() { msg_err "$@"; exit 1; }
+
+do_log() {
+  if [[ -f $LOGFILE && -r $LOGFILE ]]; then
+    cat "$LOGFILE"
+  else
+    >&2 echo "$SCRIPT_NAME: Cannot read log: $LOGFILE"
+    return 1
+  fi
+}
 
 show_help() {
   cat <<EOT
@@ -60,6 +84,7 @@ Usage: $SCRIPT_NAME [options]
        source $SCRIPT_NAME  # Load watch_ip function
 
 Options:
+  -l, --log     Display log file contents
   -q, --quiet   Suppress output when IP unchanged
   -h, --help    Display this help
   -V, --version Display version
@@ -69,10 +94,15 @@ Exported Functions (when sourced):
                     Returns: "changed:old:new" or "unchanged:ip"
 
 Behavior:
-  - Requires root privileges (executable mode only)
-  - Logs IP changes to syslog (local0.notice)
+  - Logs to syslog when run as root (local0.notice)
+  - Logs all activity to LOGFILE
   - Calls internetip -s on change to notify remote server
-  - Stores current IP in /tmp/internetip.txt
+  - Stores current IP in IPFILE
+
+Environment:
+  LOGFILE       Log file (default: /var/log/watchip.log,
+                falls back to ~/.watchip.log if not writable)
+  IPFILE        IP tracking file (default: /tmp/internetip.txt)
 
 Exit Codes:
   0   Success (IP checked)
@@ -80,13 +110,13 @@ Exit Codes:
   22  Invalid option (EINVAL)
 
 Examples:
-  sudo $SCRIPT_NAME              # Check for IP change
-  sudo $SCRIPT_NAME -q           # Quiet mode (for cron)
+  $SCRIPT_NAME                   # Check for IP change
+  $SCRIPT_NAME -q                # Quiet mode (for cron)
 
   # Cron job (check every 5 minutes)
   */5 * * * * /usr/local/bin/$SCRIPT_NAME -q
 
-  # Sourced mode (no root required)
+  # Sourced mode
   source $SCRIPT_NAME
   result=\$(watch_ip /tmp/myapp_ip.txt)
   [[ \$result == changed:* ]] && echo "IP changed!"
@@ -101,15 +131,13 @@ main() {
     case $1 in
       -h|--help)    show_help; return 0 ;;
       -V|--version) echo "$SCRIPT_NAME $VERSION"; return 0 ;;
+      -l|--log|log) do_log; return $? ;;
       -q|--quiet)   quiet=1 ;;
       -*)           msg_die "Unknown option ${1@Q}. Try: $SCRIPT_NAME --help" ;;
       *)            msg_die "Unexpected argument ${1@Q}" ;;
     esac
     shift
   done
-
-  # Require root
-  ((EUID == 0)) || msg_die "$SCRIPT_NAME must be run as root"
 
   # Watch for changes
   result=$(watch_ip "$IPFILE") || msg_die 'Error checking IP'

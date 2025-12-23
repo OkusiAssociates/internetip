@@ -122,11 +122,13 @@ load 'helpers/mocks'
   [[ "$output" == *"watchip"* ]]
 }
 
-@test "watchip requires root in executable mode" {
+@test "watchip runs without root in executable mode" {
   skip_if_root
-  run "$BATS_TEST_DIRNAME/../watchip"
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"must be run as root"* ]]
+  local tmpfile="/tmp/watchip_test_$$.txt"
+  rm -f "$tmpfile"
+  IPFILE="$tmpfile" run "$BATS_TEST_DIRNAME/../watchip"
+  rm -f "$tmpfile"
+  [ "$status" -eq 0 ]
 }
 
 @test "watchip executable runs successfully as root" {
@@ -152,6 +154,71 @@ load 'helpers/mocks'
   run "$BATS_TEST_DIRNAME/../watchip" --invalid-option
   [ "$status" -eq 1 ]
   [[ "$output" == *"Unknown option"* ]]
+}
+
+# =============================================================================
+# Log Option Tests
+# =============================================================================
+
+@test "watchip --log displays log contents" {
+  local logfile="$TEST_TMPDIR/test_log_$$.log"
+  echo "2025-01-01 12:00:00 testuser: Test message" > "$logfile"
+  LOGFILE="$logfile" run "$BATS_TEST_DIRNAME/../watchip" --log
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Test message"* ]]
+}
+
+@test "watchip -l is alias for --log" {
+  local logfile="$TEST_TMPDIR/test_log_l_$$.log"
+  echo "2025-01-01 12:00:00 testuser: Short option test" > "$logfile"
+  LOGFILE="$logfile" run "$BATS_TEST_DIRNAME/../watchip" -l
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Short option test"* ]]
+}
+
+@test "watchip log subcommand style works" {
+  local logfile="$TEST_TMPDIR/test_log_sub_$$.log"
+  echo "2025-01-01 12:00:00 testuser: Subcommand test" > "$logfile"
+  LOGFILE="$logfile" run "$BATS_TEST_DIRNAME/../watchip" log
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Subcommand test"* ]]
+}
+
+@test "watchip --log fails when log not readable" {
+  local logfile="$TEST_TMPDIR/nonexistent_$$.log"
+  rm -f "$logfile"
+  LOGFILE="$logfile" run "$BATS_TEST_DIRNAME/../watchip" --log
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"Cannot read log"* ]]
+}
+
+@test "watchip creates log entry on error" {
+  local logfile="$TEST_TMPDIR/error_log_$$.log"
+  rm -f "$logfile"
+  LOGFILE="$logfile" run "$BATS_TEST_DIRNAME/../watchip" --invalid-opt
+  [ "$status" -eq 1 ]
+  [ -f "$logfile" ]
+  [[ "$(cat "$logfile")" == *"ERROR:"* ]]
+}
+
+@test "watchip log format is timestamp user: message" {
+  local logfile="$TEST_TMPDIR/format_log_$$.log"
+  rm -f "$logfile"
+  LOGFILE="$logfile" run "$BATS_TEST_DIRNAME/../watchip" --bad-option
+  [ -f "$logfile" ]
+  # Format: YYYY-MM-DD HH:MM:SS username: ERROR: message
+  [[ "$(cat "$logfile")" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}\ [0-9]{2}:[0-9]{2}:[0-9]{2}\ [a-z]+:\ ERROR: ]]
+}
+
+@test "watchip LOGFILE env var overrides default" {
+  local logfile="$TEST_TMPDIR/custom_log_$$.log"
+  local ipfile="$TEST_TMPDIR/custom_ip_$$.txt"
+  rm -f "$logfile" "$ipfile"
+  echo "1.2.3.4" > "$ipfile"
+  LOGFILE="$logfile" IPFILE="$ipfile" run "$BATS_TEST_DIRNAME/../watchip"
+  [ "$status" -eq 0 ]
+  [ -f "$logfile" ]
+  [[ "$(cat "$logfile")" == *"IP changed"* ]]
 }
 
 # =============================================================================
