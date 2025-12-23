@@ -122,6 +122,12 @@ load 'helpers/setup'
   [[ "$output" == *"Unknown option"* ]]
 }
 
+@test "validip executable returns 22 for missing argument" {
+  run "$BATS_TEST_DIRNAME/../validip"
+  [ "$status" -eq 22 ]
+  [[ "$output" == *"Missing IP address"* ]]
+}
+
 # =============================================================================
 # Sourced Mode Tests
 # =============================================================================

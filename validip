@@ -69,5 +69,6 @@ EOT
   esac
 fi
 
+(($#)) || { >&2 echo "$SCRIPT_NAME: ✗ Missing IP address"; exit 22; }
 valid_ip "$1"
 #fin
