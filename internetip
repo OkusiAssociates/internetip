@@ -33,16 +33,16 @@ declare -fx get_internet_ip internetip
 [[ "${BASH_SOURCE[0]}" == "${0}" ]] || return 0
 #!/bin/bash #semantic ----------------------------------------------------------
 set -euo pipefail
-shopt -s inherit_errexit shift_verbose extglob nullglob
+shopt -s inherit_errexit extglob nullglob
 
-VERSION='2.3.0'
-
+VERSION=2.3.0
 SCRIPT_PATH="$(realpath -e -- "$0")"
 SCRIPT_DIR="${SCRIPT_PATH%/*}"
 SCRIPT_NAME="${SCRIPT_PATH##*/}"
 
 GATEWAY_IP_FILE=${GATEWAY_IP_FILE:-/tmp/GatewayIP}
 INTERNETIP_PROFILE=${INTERNETIP_PROFILE:-/etc/profile.d/"$SCRIPT_NAME".sh}
+
 #shellcheck disable=SC2034
 readonly -- VERSION SCRIPT_PATH SCRIPT_DIR SCRIPT_NAME GATEWAY_IP_FILE INTERNETIP_PROFILE
 
@@ -76,7 +76,7 @@ info() { ((VERBOSE)) || return 0; >&2 _msg "$@"; }
 warn() { ((VERBOSE)) || return 0; >&2 _msg "$@"; }
 success() { ((VERBOSE)) || return 0; >&2 _msg "$@" || return 0; }
 error() { >&2 _msg "$@"; }
-die() { (($# > 1)) && error "${@:2}"; exit "${1:-0}"; }
+die() { (($# > 1)) && error "${@:2}" ||:; exit "${1:-0}"; }
 
 # Expand allowed template variables in URL
 # Usage: expanded=$(expand_url_template "$template" "$gateway_ip")
@@ -157,7 +157,7 @@ internetip_call_url() {
     #shellcheck source=/dev/null
     source "$INTERNETIP_PROFILE" 2>/dev/null || true
     [[ -n ${INTERNETIP_CALL_URL:-} ]] \
-        || die 1 'INTERNETIP_CALL_URL not set.' "Run: sudo $SCRIPT_NAME --set-url"
+        || die 1 'INTERNETIP_CALL_URL not set.' "Run: sudo $SCRIPT_NAME --set-url [url]"
   fi
 
   local -- url
@@ -252,7 +252,7 @@ EOF
   systemctl daemon-reload
   info 'Ran: systemctl daemon-reload'
 
-  success "URL template configured. Re-login or run: source $INTERNETIP_PROFILE"
+  success 'URL template configured.' "Re-login or run: source $INTERNETIP_PROFILE"
 }
 
 do_show_url() {
@@ -326,7 +326,9 @@ main() {
 
   echo "$GATEWAY_IP"
 
-  ((call_url==0)) || internetip_call_url "$GATEWAY_IP"
+  if ((call_url)); then
+    internetip_call_url "$GATEWAY_IP"
+  fi
 }
 
 main "$@"

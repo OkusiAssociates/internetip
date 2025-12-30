@@ -21,8 +21,8 @@ declare -fx valid_ip valid_ip4 valid_ip6
 set -euo pipefail
 shopt -s inherit_errexit extglob nullglob
 
-declare -r VERSION='1.1.0'
-declare -r SCRIPT_NAME='validip'
+declare -r VERSION=1.1.0
+declare -r SCRIPT_NAME=validip
 
 if (($#)); then
   case $1 in

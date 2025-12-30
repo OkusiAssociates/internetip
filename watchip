@@ -5,9 +5,11 @@
 if ! declare -F get_internet_ip &>/dev/null; then
   #shellcheck disable=SC1091 source=internetip
   source "${BASH_SOURCE[0]%/*}"/internetip 2>/dev/null || {
-    >&2 echo 'watchip: error: Cannot source internetip module'
-    #shellcheck disable=SC2317
-    return 1 2>/dev/null || exit 1
+    source internetip 2>/dev/null || {
+      >&2 echo 'watchip: error: Cannot source internetip module'
+      #shellcheck disable=SC2317
+      return 1 2>/dev/null || exit 1
+    }
   }
 fi
 
@@ -42,11 +44,12 @@ declare -fx watch_ip
 set -euo pipefail
 shopt -s inherit_errexit extglob nullglob
 
-declare -r VERSION='2.1.0'
-SCRIPT_PATH="$(realpath -e -- "$0")"
-SCRIPT_NAME="${SCRIPT_PATH##*/}"
+VERSION=2.1.0
+SCRIPT_PATH=$(realpath -e -- "$0")
+SCRIPT_NAME=${SCRIPT_PATH##*/}
+readonly -- VERSION SCRIPT_NAME SCRIPT_PATH
 
-declare -- IPFILE=${IPFILE:-/tmp/internetip.txt}
+declare -- IPFILE=${IPFILE:-/tmp/"$SCRIPT_NAME".txt}
 
 # LOGFILE with fallback: /var/log if writable, else ~/
 declare -- LOGFILE=${LOGFILE:-}
@@ -63,9 +66,9 @@ log_msg() {
   echo "$ts $USER: $*" >> "$LOGFILE" 2>/dev/null || true
 }
 
-msg_sys() { ((EUID)) || logger -t "$SCRIPT_NAME" -p local0.notice "$@"; log_msg "$@"; echo "$@"; }
-msg_err() { ((EUID)) || logger -t "$SCRIPT_NAME" -p local0.err "ERROR: $*"; log_msg "ERROR: $*"; >&2 echo "$@"; }
-msg_die() { msg_err "$@"; exit 1; }
+log_sys() { ((EUID)) || logger -t "$SCRIPT_NAME" -p local0.notice "$@"; log_msg "$@"; echo "$@"; }
+log_err() { ((EUID)) || logger -t "$SCRIPT_NAME" -p local0.err "ERROR: $*"; log_msg "ERROR: $*"; >&2 echo "$@"; }
+log_die() { log_err "$@"; exit 1; }
 
 do_log() {
   if [[ -f $LOGFILE && -r $LOGFILE ]]; then
@@ -133,19 +136,19 @@ main() {
       -V|--version) echo "$SCRIPT_NAME $VERSION"; return 0 ;;
       -l|--log|log) do_log; return $? ;;
       -q|--quiet)   quiet=1 ;;
-      -*)           msg_die "Unknown option ${1@Q}. Try: $SCRIPT_NAME --help" ;;
-      *)            msg_die "Unexpected argument ${1@Q}" ;;
+      -*)           log_die "Unknown option ${1@Q}. Try: $SCRIPT_NAME --help" ;;
+      *)            log_die "Unexpected argument ${1@Q}" ;;
     esac
     shift
   done
 
   # Watch for changes
-  result=$(watch_ip "$IPFILE") || msg_die 'Error checking IP'
+  result=$(watch_ip "$IPFILE") || log_die 'Error checking IP'
 
   if [[ $result == initial:* ]]; then
     # First run: initial:ip
     curip="${result#initial:}"
-    msg_sys "Initial IP: $curip"
+    log_sys "Initial IP: $curip"
   elif [[ $result == changed:* ]]; then
     # Parse result: changed:oldip:newip
     oldip="${result#changed:}"
@@ -153,7 +156,7 @@ main() {
     oldip="${oldip%%:*}"
     # Store to remote and log
     internetip -s >/dev/null 2>&1 || true
-    msg_sys "IP changed from $oldip to $curip"
+    log_sys "IP changed from $oldip to $curip"
   else
     # unchanged:ip
     curip="${result#unchanged:}"
