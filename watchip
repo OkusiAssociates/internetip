@@ -14,7 +14,7 @@ if ! declare -F get_internet_ip &>/dev/null; then
 fi
 
 watch_ip() {
-  local -- ipfile="${1:-/tmp/internetip.txt}"
+  local -- ipfile=${1:-/tmp/internetip.txt}
   local -- oldip curip
 
   # First run: fetch once, store, return
@@ -29,7 +29,7 @@ watch_ip() {
   oldip=$(<"$ipfile")
   curip=$(get_internet_ip) || return 1
 
-  if [[ $oldip != "$curip" ]]; then
+  if [[ "$oldip" != "$curip" ]]; then
     echo "$curip" > "$ipfile"
     echo "changed:$oldip:$curip"
   else
@@ -42,21 +42,21 @@ declare -fx watch_ip
 [[ "${BASH_SOURCE[0]}" == "${0}" ]] || return 0
 #!/bin/bash #semantic ----------------------------------------------------------
 set -euo pipefail
-shopt -s inherit_errexit extglob nullglob
+shopt -s inherit_errexit shift_verbose extglob nullglob
 
-VERSION=2.1.0
-SCRIPT_PATH=$(realpath -e -- "$0")
-SCRIPT_NAME=${SCRIPT_PATH##*/}
-readonly -- VERSION SCRIPT_NAME SCRIPT_PATH
+declare -r VERSION=2.1.0
+#shellcheck disable=SC2155
+declare -r SCRIPT_PATH=$(realpath -e -- "$0")
+declare -r SCRIPT_NAME=${SCRIPT_PATH##*/}
 
 declare -- IPFILE=${IPFILE:-/tmp/"$SCRIPT_NAME".txt}
 
 # LOGFILE with fallback: /var/log if writable, else ~/
 declare -- LOGFILE=${LOGFILE:-}
 if [[ -z $LOGFILE ]]; then
-  LOGFILE="/var/log/$SCRIPT_NAME.log"
+  LOGFILE=/var/log/"$SCRIPT_NAME".log
   if ! touch "$LOGFILE" 2>/dev/null; then
-    LOGFILE="$HOME/.$SCRIPT_NAME.log"
+    LOGFILE="$HOME"/."$SCRIPT_NAME".log
   fi
 fi
 
@@ -80,7 +80,7 @@ do_log() {
 }
 
 show_help() {
-  cat <<EOT
+  cat <<HELP
 $SCRIPT_NAME $VERSION - Monitor and log public IP address changes
 
 Usage: $SCRIPT_NAME [options]
@@ -123,7 +123,7 @@ Examples:
   source $SCRIPT_NAME
   result=\$(watch_ip /tmp/myapp_ip.txt)
   [[ \$result == changed:* ]] && echo "IP changed!"
-EOT
+HELP
 }
 
 main() {
@@ -147,19 +147,19 @@ main() {
 
   if [[ $result == initial:* ]]; then
     # First run: initial:ip
-    curip="${result#initial:}"
+    curip=${result#initial:}
     log_sys "Initial IP: $curip"
   elif [[ $result == changed:* ]]; then
     # Parse result: changed:oldip:newip
-    oldip="${result#changed:}"
-    curip="${oldip#*:}"
-    oldip="${oldip%%:*}"
+    oldip=${result#changed:}
+    curip=${oldip#*:}
+    oldip=${oldip%%:*}
     # Store to remote and log
     internetip -s >/dev/null 2>&1 || true
     log_sys "IP changed from $oldip to $curip"
   else
     # unchanged:ip
-    curip="${result#unchanged:}"
+    curip=${result#unchanged:}
     ((quiet)) || echo "IP unchanged: $curip"
   fi
 }
