@@ -21,7 +21,7 @@ fi
 
 get_internet_ip() {
   local -- ip
-  ip=$(curl -sf --max-time 10 'http://ipecho.net/plain' 2>/dev/null | head -n1)
+  ip=$(curl -4sf --max-time 10 'http://ipecho.net/plain' 2>/dev/null | head -n1)
   valid_ip "$ip" || return 1
   echo "$ip"
 }
@@ -83,6 +83,14 @@ die() { (($# < 2)) || error "${@:2}"; exit "${1:-0}"; }
 expand_url_template() {
   local -- url=$1
   local -- gateway_ip=${2:-$GATEWAY_IP}
+
+  local -- wifi
+  wifi=$(iwgetid -r 2>/dev/null) \
+      || wifi=$(nmcli -t -f active,ssid dev wifi 2>/dev/null | grep '^yes:' | cut -d: -f2 | head -n1) \
+      || wifi=$HOSTNAME
+  url="${url//\$WIFI/$wifi}"
+  url="${url//WIFI/$wifi}"
+
   url="${url//\$HOSTNAME/$HOSTNAME}"
   url="${url//HOSTNAME/$HOSTNAME}"
   url="${url//\$GATEWAY_IP/$gateway_ip}"
@@ -121,7 +129,7 @@ Options:
 Environment:
   INTERNETIP_CALL_URL  Callback URL template for -s option (set via seturl)
                        Currently ${INTERNETIP_CALL_URL@Q}.
-                       Template variables: \$HOSTNAME \$GATEWAY_IP \$SCRIPT_NAME \$VERSION
+                       Template variables: \$HOSTNAME \$GATEWAY_IP \$WIFI \$SCRIPT_NAME \$VERSION
                        (The \$ prefix is optional: HOSTNAME works same as \$HOSTNAME)
   INTERNETIP_PROFILE   Profile file for URL config (def. /etc/profile.d/internetip.sh)
   GATEWAY_IP_FILE      File containing cached IP (def. $GATEWAY_IP_FILE)
@@ -223,7 +231,7 @@ do_set_url() {
   # If no URL provided as argument, prompt interactively
   if [[ -z $url ]]; then
     #shellcheck disable=SC2016  # Intentionally showing literal variable names
-    echo 'Enter callback URL template (variables: $HOSTNAME $GATEWAY_IP $SCRIPT_NAME $VERSION)'
+    echo 'Enter callback URL template (variables: $HOSTNAME $GATEWAY_IP $WIFI $SCRIPT_NAME $VERSION)'
     [[ -n $current ]] && echo "Current: $current"
     read -r -p '> ' url
     # Use current if user just presses Enter, but require input if none exists
