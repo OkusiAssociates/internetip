@@ -1,0 +1,20 @@
+#!/bin/bash
+# Bash completion for watchip
+
+_watchip() {
+  local -- cur
+  COMPREPLY=()
+  cur=${COMP_WORDS[COMP_CWORD]}
+
+  local -- opts='-l -q -h -V --log --quiet --help --version'
+  local -- commands='log'
+
+  if [[ $cur == -* ]]; then
+    mapfile -t COMPREPLY < <(compgen -W "$opts" -- "$cur")
+  elif ((COMP_CWORD == 1)); then
+    mapfile -t COMPREPLY < <(compgen -W "$commands" -- "$cur")
+  fi
+}
+
+complete -F _watchip watchip
+#fin

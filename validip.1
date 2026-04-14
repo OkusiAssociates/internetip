@@ -1,0 +1,103 @@
+.TH VALIDIP 1 "2026-04-14" "validip 1.2.0" "User Commands"
+.SH NAME
+validip \- validate IPv4 and IPv6 address format
+.SH SYNOPSIS
+.B validip
+[\fB\-h\fR | \fB\-\-help\fR]
+[\fB\-V\fR | \fB\-\-version\fR]
+.I ip_address
+.PP
+.B source validip
+.SH DESCRIPTION
+.B validip
+is a Bash utility that validates IPv4 and IPv6 address formats. In script
+mode it accepts a single IP address as a positional argument; the address
+family is auto-detected by the presence of a colon (IPv6) or a period
+(IPv4).
+.PP
+When sourced as a Bash module,
+.B validip
+exports three functions:
+.BR valid_ip ", " valid_ip4 ", and " valid_ip6 .
+.SH OPTIONS
+.TP
+.BR \-h ", " \-\-help
+Display help and exit.
+.TP
+.BR \-V ", " \-\-version
+Display version and exit.
+.TP
+.B \-\-
+End-of-options sentinel. Subsequent arguments are treated as positional
+even if they begin with a dash.
+.SH EXIT STATUS
+.TP
+.B 0
+Valid IP address.
+.TP
+.B 1
+Invalid IP address.
+.TP
+.B 22
+Missing argument, unknown option, or too many arguments (EINVAL).
+.SH VALIDATION RULES
+.SS IPv4
+Four decimal octets separated by periods, each in the range 0\-255.
+Leading zeros are rejected (for example
+.IR 010.0.0.1
+is invalid), matching
+.BR inet_pton (3)
+behaviour.
+.SS IPv6
+Standard eight-hextet form, zero-compression
+.RB ( :: ),
+IPv4-mapped
+.RB ( ::ffff:1.2.3.4 ),
+IPv4-embedded in the last 32 bits
+.RB ( 2001:db8::1.2.3.4 ),
+and zone identifiers
+.RB ( fe80::1%eth0 ).
+Addresses with three or more consecutive colons or multiple
+.B ::
+zero-compression sequences are rejected.
+.SH EXPORTED FUNCTIONS
+When sourced, the following functions become available in the caller's
+shell (marked with
+.BR "declare -fx" ):
+.TP
+.BI "valid_ip " ip
+Dispatches to
+.B valid_ip4
+or
+.B valid_ip6
+based on the presence of a colon. Returns 0 if valid, 1 otherwise.
+.TP
+.BI "valid_ip4 " ip
+Validate an IPv4 address. Returns 0 on success, 1 on failure.
+.TP
+.BI "valid_ip6 " ip
+Validate an IPv6 address. Returns 0 on success, 1 on failure.
+.SH EXAMPLES
+Validate from a shell prompt:
+.PP
+.EX
+validip 192.168.1.1 && echo valid
+validip ::1 && echo valid
+validip ::ffff:192.168.1.1 && echo valid
+validip fe80::1%eth0 && echo valid
+.EE
+.PP
+Use as a module inside a script:
+.PP
+.EX
+source validip
+if valid_ip "$ip"; then
+  echo "Valid IPv4 or IPv6"
+fi
+.EE
+.SH SEE ALSO
+.BR internetip (1),
+.BR watchip (1),
+.BR inet_pton (3)
+.SH AUTHOR
+Biksu Okusi <biksu@okusi.id>

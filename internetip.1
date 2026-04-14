@@ -1,0 +1,266 @@
+.TH INTERNETIP 1 "2026-04-14" "internetip 2.3.0" "User Commands"
+.SH NAME
+internetip \- fetch and display the public internet IP address
+.SH SYNOPSIS
+.B internetip
+[\fIoptions\fR]
+.br
+.B internetip
+.I command
+[\fIargument\fR]
+.br
+.B source internetip
+.SH DESCRIPTION
+.B internetip
+fetches the current public IP address from
+.I https://ipecho.net/plain
+using
+.BR curl (1)
+with automatic retry (3 attempts, 5-second delay). The fetched address is
+validated by
+.BR validip (1)
+before being printed. When invoked as root, the result is cached to
+.I $GATEWAY_IP_FILE
+(default
+.IR /tmp/GatewayIP ).
+.PP
+With
+.BR \-s ", " \-c ", or " \-\-call\-url ,
+.B internetip
+additionally calls a configured callback URL after fetching the IP,
+suitable for dynamic DNS registration, server inventory updates, and
+automated IP notification workflows. The callback URL supports runtime
+template variables (see
+.B URL TEMPLATE VARIABLES
+below). Callback requests use full TLS certificate verification.
+.PP
+When sourced as a Bash module,
+.B internetip
+exports the
+.B get_internet_ip
+function and also makes
+.BR valid_ip ,
+.BR valid_ip4 ,
+and
+.B valid_ip6
+available (lazy-loaded from
+.BR validip (1)).
+.SH COMMANDS
+.TP
+.B install
+Install
+.BR internetip ", " validip ", and " watchip
+as symlinks in
+.IR /usr/local/bin ,
+plus per-script bash completion files in
+.IR /etc/bash_completion.d .
+Requires root.
+.TP
+.B update
+.BR "git pull"
+the repository directory and reinstall. Requires root.
+.TP
+.B uninstall
+Remove installed symlinks and completion files. Requires root.
+.TP
+.BR "seturl " [\fIurl\fR]
+Configure the system-wide callback URL template. Writes
+.I $INTERNETIP_PROFILE
+(default
+.IR /etc/profile.d/internetip.sh )
+and
+.IR /etc/systemd/system-environment-generators/internetip .
+Prompts interactively if no URL is given. Requires root. URLs are escaped
+for shell-safe embedding before being written. Also accepts the form
+.BR seturl= \fIurl\fR.
+.TP
+.B showurl
+Show the current callback URL template and its expanded form.
+.TP
+.B unseturl
+Remove the system-wide URL configuration. Requires root.
+.PP
+Long-option forms
+.RB ( \-\-install ", " \-\-update ", " \-\-uninstall ", " \-\-set\-url ", "
+.BR \-\-show\-url ", " \-\-unset\-url )
+are also accepted.
+.SH OPTIONS
+.TP
+.BR \-s ", " \-c ", " \-\-call\-url
+After fetching the IP, call the configured
+.I $INTERNETIP_CALL_URL
+template (with variables expanded).
+.TP
+.BR \-v ", " \-\-verbose
+Increase verbosity. Repeatable.
+.TP
+.BR \-q ", " \-\-quiet
+Suppress informational output. Warnings and errors still display.
+.TP
+.BR \-h ", " \-\-help
+Display help and exit.
+.TP
+.BR \-V ", " \-\-version
+Display version and exit.
+.TP
+.B \-\-
+End-of-options sentinel.
+.PP
+Short options may be bundled:
+.B \-cv
+is equivalent to
+.B \-c \-v
+and
+.BR \-sv
+to
+.BR "\-s \-v" .
+.SH URL TEMPLATE VARIABLES
+Callback URLs may contain template tokens that are substituted at runtime.
+The
+.B $
+prefix is optional (\fBHOSTNAME\fR works the same as \fB$HOSTNAME\fR):
+.TP
+.B HOSTNAME
+The system hostname (from
+.BR hostname (1)).
+.TP
+.B GATEWAY_IP
+The currently fetched public IP.
+.TP
+.B WIFI
+The active Wi-Fi SSID, resolved via
+.BR iwgetid (8)
+and
+.BR nmcli (1)
+in order. Falls back to
+.B HOSTNAME
+if neither tool is installed or no network is active.
+.TP
+.B SCRIPT_NAME
+The script basename
+.RB ( internetip ).
+.TP
+.B VERSION
+The script version string.
+.SH ENVIRONMENT
+.TP
+.B INTERNETIP_CALL_URL
+Callback URL template for the
+.B \-s
+option. Normally set via
+.B seturl
+and sourced from
+.I $INTERNETIP_PROFILE
+on login, or emitted by the systemd environment generator for system
+services.
+.TP
+.B INTERNETIP_PROFILE
+Path to the shell profile fragment that exports
+.B INTERNETIP_CALL_URL
+on login. Default:
+.IR /etc/profile.d/internetip.sh .
+.TP
+.B GATEWAY_IP_FILE
+Path to the root-written cache file. Default:
+.IR /tmp/GatewayIP .
+.SH EXIT STATUS
+.B internetip
+uses the BCS0602 canonical exit-code vocabulary:
+.TP
+.B 0
+Success \- IP retrieved (and callback invoked if requested).
+.TP
+.B 3
+ERR_NOENT \- script file missing or unreadable path during
+.BR install / update .
+.TP
+.B 13
+ERR_ACCESS \- operation requires root.
+.TP
+.B 18
+ERR_NODEP \-
+.BR validip (1)
+dependency unreachable.
+.TP
+.B 19
+ERR_CONFIG \-
+.B INTERNETIP_CALL_URL
+not configured.
+.TP
+.B 21
+ERR_STATE \- repository directory is not a git checkout
+(during
+.BR update ).
+.TP
+.B 22
+ERR_INVAL \- unknown option or unexpected argument.
+.TP
+.B 23
+ERR_NETWORK \- IP fetch failed, callback URL failed, or
+.B git pull
+failed.
+.SH FILES
+.TP
+.I /etc/profile.d/internetip.sh
+Login-shell export of
+.B INTERNETIP_CALL_URL
+(written by
+.BR seturl ).
+.TP
+.I /etc/systemd/system-environment-generators/internetip
+Systemd environment generator that emits
+.B INTERNETIP_CALL_URL
+for system services (written by
+.BR seturl ).
+.TP
+.I /tmp/GatewayIP
+Cached public IP, written when
+.B internetip
+is run as root.
+.SH EXAMPLES
+Display the current public IP:
+.PP
+.EX
+internetip
+.EE
+.PP
+Configure a callback URL (interactively) and then use it:
+.PP
+.EX
+sudo internetip seturl
+# Enter: https://example.com/ip.php?host=HOSTNAME&ip=GATEWAY_IP
+internetip -s
+.EE
+.PP
+Pass the URL directly:
+.PP
+.EX
+sudo internetip seturl='https://example.com?host=HOSTNAME&ip=GATEWAY_IP'
+.EE
+.PP
+When invoking via SSH, encode
+.B &
+as
+.B %26
+to survive intermediate shell parsing:
+.PP
+.EX
+ssh host "internetip seturl='https://example.com?host=HOSTNAME%26ip=GATEWAY_IP'"
+.EE
+.PP
+Use as a Bash module:
+.PP
+.EX
+source internetip
+ip=$(get_internet_ip)
+echo "Current IP: $ip"
+.EE
+.SH SEE ALSO
+.BR validip (1),
+.BR watchip (1),
+.BR curl (1),
+.BR systemd.environment-generator (7),
+.BR iwgetid (8),
+.BR nmcli (1)
+.SH AUTHOR
+Biksu Okusi <biksu@okusi.id>

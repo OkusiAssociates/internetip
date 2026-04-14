@@ -1,0 +1,18 @@
+#!/bin/bash
+# Bash completion for validip
+
+_validip() {
+  local -- cur
+  COMPREPLY=()
+  cur=${COMP_WORDS[COMP_CWORD]}
+
+  local -- opts='-h -V --help --version'
+
+  # Only complete option flags — IP addresses are positional and freeform
+  if [[ $cur == -* ]]; then
+    mapfile -t COMPREPLY < <(compgen -W "$opts" -- "$cur")
+  fi
+}
+
+complete -F _validip validip
+#fin

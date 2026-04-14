@@ -15,21 +15,28 @@ All scripts follow the [BASH-CODING-STANDARD](https://github.com/Open-Technology
 ## Installation
 
 ```bash
-# Clone and install
+# Clone
 git clone https://github.com/OkusiAssociates/internetip.git
-sudo ./internetip/internetip install
+cd internetip
 
-# Or from within the repo
-sudo ./internetip install
+# Install via Makefile (BCS1212-compliant)
+sudo make install              # Installs to /usr/local/bin + /etc/bash_completion.d
+sudo make install PREFIX=/usr  # Or any standard prefix
+sudo make uninstall            # Remove everything installed
 
-# Update existing installation
-sudo internetip update
+# Or via the internetip script's built-in installer
+sudo ./internetip install      # Symlinks scripts, installs bash completion
+sudo internetip update         # Git pull + reinstall
+sudo internetip uninstall      # Remove from /usr/local/bin
 
-# Uninstall
-sudo internetip uninstall
+make help                      # Show all Makefile targets and variables
+make test                      # Run the bats suite
+make lint                      # Run shellcheck on all scripts
 ```
 
-Installs symlinks to `/usr/local/bin` and bash completion to `/etc/bash_completion.d`.
+Both mechanisms install the three scripts to `$(BINDIR)` and three per-script completion files to `$(COMPDIR)`. The Makefile follows BCS1212: standard targets (`install`/`uninstall`/`check`/`test`/`help`) with overridable `PREFIX`/`BINDIR`/`MANDIR`/`COMPDIR`/`DESTDIR`.
+
+Key difference between the two installers: `make install` copies scripts with `install(1)` (standard packaging behavior — supports `DESTDIR` for staged installs). `./internetip install` creates symlinks from the repo into `/usr/local/bin` (stays in sync when you `git pull` or `internetip update`). Use the script installer for development, the Makefile for packaging.
 
 ## Usage
 
@@ -123,7 +130,20 @@ The server decodes `%26` back to `&` automatically.
 
 When run as root, caches result to `GATEWAY_IP_FILE`.
 
-All HTTP requests use curl with automatic retry (3 attempts, 5-second delay) for resilience against transient network errors.
+All HTTP requests use curl with automatic retry (3 attempts, 5-second delay) for resilience against transient network errors. Callback URLs are fetched with full TLS certificate verification.
+
+**Exit Codes** (BCS0602 canonical):
+
+| Code | Name | Meaning |
+|------|------|---------|
+| `0`  | SUCCESS      | IP retrieved (and callback invoked if requested) |
+| `3`  | ERR_NOENT    | Script file missing / unreadable path |
+| `13` | ERR_ACCESS   | Operation requires root |
+| `18` | ERR_NODEP    | `validip` dependency unreachable |
+| `19` | ERR_CONFIG   | `INTERNETIP_CALL_URL` not configured |
+| `21` | ERR_STATE    | Not a git repository (during `update`) |
+| `22` | ERR_INVAL    | Unknown option or unexpected argument |
+| `23` | ERR_NETWORK  | IP fetch failed, callback failed, or `git pull` failed |
 
 **Output icons:** Messages use status icons for clarity: ◉ info, ▲ warn, ✓ success, ✗ error.
 
@@ -179,13 +199,22 @@ watchip --log           # Display log file contents
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `LOGFILE` | Log file path | `/var/log/watchip.log` (falls back to `~/.watchip.log`) |
-| `IPFILE` | IP tracking file | `/tmp/internetip.txt` |
+| `IPFILE` | IP tracking file | `/tmp/watchip.txt` |
 
-Logs state changes (initial IP, IP changes) to `LOGFILE`. When run as root, also logs to syslog (`local0.notice`). Typical cron entry:
+Logs state changes (initial IP, IP changes) to `LOGFILE`. When run as root, also logs to syslog (`local0.notice`). Argument-parsing errors are written to stderr only — they do not pollute the operational log. Typical cron entry:
 
 ```cron
 */5 * * * * /usr/local/bin/watchip -q
 ```
+
+**Exit Codes** (BCS0602 canonical):
+
+| Code | Name | Meaning |
+|------|------|---------|
+| `0`  | SUCCESS      | IP checked (initial, changed, or unchanged) |
+| `18` | ERR_NODEP    | `internetip` dependency unreachable |
+| `22` | ERR_INVAL    | Unknown option or unexpected argument |
+| `23` | ERR_NETWORK  | Failed to fetch or validate current IP |
 
 ## Module Usage
 
@@ -228,7 +257,7 @@ watchip ──sources──> internetip ──sources──> validip
 | `curl` | internetip | HTTP requests to ipecho.net (with retry logic) |
 | `iwgetid` or `nmcli` | internetip | Resolve `$WIFI` template variable (optional; falls back to `HOSTNAME`) |
 | `logger` | watchip | Syslog integration |
-| Bash 4.0+ | All | Shell interpreter |
+| Bash 5.0+ | All | Shell interpreter (uses `${var@Q}`, `printf '%(fmt)T'`, `declare -n`) |
 | `bats-core` | tests | Test framework (optional) |
 
 ## Testing
@@ -238,6 +267,7 @@ A comprehensive test suite using [bats-core](https://github.com/bats-core/bats-c
 ### Running Tests
 
 ```bash
+make test                   # Via Makefile (calls bats tests/)
 ./run_tests.sh              # Run as user (skips root tests)
 ./run_tests.sh -a           # Run all including root tests
 ./run_tests.sh -v           # Verbose TAP output
@@ -252,11 +282,11 @@ sudo bats tests/            # Root-required tests
 
 | Test File | Tests | Coverage |
 |-----------|-------|----------|
-| `test_validip.bats` | 50 | IPv4 + IPv6 validation, family dispatch, CLI options, sourcing |
-| `test_internetip.bats` | 56 | Network fetch, caching, verbose/quiet, install/update/uninstall, URL config |
-| `test_watchip.bats` | 30 | Change detection, logging, file ops |
+| `test_validip.bats` | 54 | IPv4 + IPv6 validation, family dispatch, leading-zero rejection, CLI options, `--` sentinel, sourcing |
+| `test_internetip.bats` | 56 | Network fetch, caching, verbose/quiet, install/update/uninstall, URL config, canonical exit codes |
+| `test_watchip.bats` | 30 | Change detection, logging, file ops, argparse-no-log-pollution |
 
-**Total: 136 tests** covering:
+**Total: 140 tests** covering:
 - Valid/invalid IPv4 and IPv6 formats
 - IPv6 zero-compression, zone IDs, IPv4-mapped/embedded
 - Executable mode (options, exit codes)
@@ -286,8 +316,11 @@ tests/
 | `internetip` | Main IP detection script |
 | `validip` | IP validation module |
 | `watchip` | IP monitoring daemon |
-| `internetip.bash_completion` | Tab completion support |
-| `run_tests.sh` | Test runner script |
+| `internetip.bash_completion` | Tab completion for `internetip` |
+| `validip.bash_completion` | Tab completion for `validip` |
+| `watchip.bash_completion` | Tab completion for `watchip` |
+| `Makefile` | BCS1212-compliant install/uninstall/test/lint/check |
+| `run_tests.sh` | Test runner script (bats wrapper with colour output) |
 | `tests/` | bats-core test suite |
 
 ## License

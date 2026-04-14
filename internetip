@@ -27,7 +27,7 @@ declare -rx PATH=/usr/local/bin:/usr/bin:/bin
 
 declare -r VERSION=2.3.0
 #shellcheck disable=SC2155
-declare -r SCRIPT_PATH=$(realpath -e -- "$0")
+declare -r SCRIPT_PATH=$(realpath -- "$0")
 declare -r SCRIPT_DIR=${SCRIPT_PATH%/*} SCRIPT_NAME=${SCRIPT_PATH##*/}
 
 declare -r GATEWAY_IP_FILE=${GATEWAY_IP_FILE:-/tmp/GatewayIP}
@@ -174,10 +174,13 @@ do_install() {
     info "Installed: /usr/local/bin/$script -> '$SCRIPT_DIR/$script'"
   done
 
-  # Bash completion
-  if [[ -d /etc/bash_completion.d && -f "$SCRIPT_DIR"/internetip.bash_completion ]]; then
-    ln -sf "$SCRIPT_DIR/internetip.bash_completion" "/etc/bash_completion.d/internetip"
-    info 'Installed: /etc/bash_completion.d/internetip'
+  # Bash completion (one file per script)
+  if [[ -d /etc/bash_completion.d ]]; then
+    for script in "${scripts[@]}"; do
+      [[ -f "$SCRIPT_DIR/$script.bash_completion" ]] || continue
+      ln -sf "$SCRIPT_DIR/$script.bash_completion" "/etc/bash_completion.d/$script"
+      info "Installed: /etc/bash_completion.d/$script"
+    done
   fi
 
   success 'Installation complete'
@@ -203,7 +206,7 @@ do_uninstall() {
   ((EUID == 0)) || die 13 'Uninstall requires root.' "Run: sudo $SCRIPT_NAME --uninstall"
 
   rm -f /usr/local/bin/{internetip,validip,watchip}
-  rm -f /etc/bash_completion.d/internetip
+  rm -f /etc/bash_completion.d/{internetip,validip,watchip}
 
   info 'Uninstalled internetip, validip, watchip from /usr/local/bin'
 }

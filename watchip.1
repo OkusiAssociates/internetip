@@ -1,0 +1,176 @@
+.TH WATCHIP 1 "2026-04-14" "watchip 2.1.0" "User Commands"
+.SH NAME
+watchip \- monitor and log public IP address changes
+.SH SYNOPSIS
+.B watchip
+[\fIoptions\fR]
+.br
+.B watchip log
+.br
+.B source watchip
+.SH DESCRIPTION
+.B watchip
+compares the current public IP (via
+.BR internetip (1))
+against a stored value and logs state changes. It is designed for
+unattended cron execution and writes to syslog (facility
+.BR local0.notice )
+when run as root.
+.PP
+On first run,
+.B watchip
+fetches the IP, writes it to
+.I $IPFILE
+(default
+.IR /tmp/watchip.txt ),
+and records an
+.B "Initial IP"
+log entry.
+On subsequent runs it compares stored vs. current; on a change it rewrites
+.I $IPFILE
+and records an
+.B "IP changed from X to Y"
+log entry. When the IP is unchanged and
+.B \-q
+is supplied (typical for cron), the tool is completely silent.
+.PP
+When sourced as a Bash module,
+.B watchip
+exports
+.B watch_ip
+and lazy-loads its
+.BR internetip (1)
+dependency on first call, so sourced callers never pollute their own
+shell namespace with
+.BR internetip 's
+top-level helpers.
+.SH OPTIONS
+.TP
+.BR \-l ", " \-\-log ", " log
+Display the current contents of
+.I $LOGFILE
+and exit. The
+.B log
+form is a positional subcommand alias.
+.TP
+.BR \-q ", " \-\-quiet
+Suppress the
+.B "IP unchanged"
+message. Change events and errors are still printed.
+.TP
+.BR \-h ", " \-\-help
+Display help and exit.
+.TP
+.BR \-V ", " \-\-version
+Display version and exit.
+.SH EXPORTED FUNCTION
+When sourced, the following function becomes available:
+.TP
+.BI "watch_ip " "[ipfile]"
+Compare the IP stored in
+.I ipfile
+(default
+.IR /tmp/internetip.txt )
+against the current public IP. Prints one of:
+.RS
+.IP \(bu 2
+.BI initial: ip
+\- first run, no
+.I ipfile
+yet.
+.IP \(bu 2
+.BI changed: old : new
+\- the IP has changed.
+.IP \(bu 2
+.BI unchanged: ip
+\- the IP is the same as stored.
+.RE
+.IP
+Returns 18
+.RB ( ERR_NODEP )
+if
+.BR internetip (1)
+is not available, or 1 if the IP fetch fails.
+.SH ENVIRONMENT
+.TP
+.B LOGFILE
+Log file path. Default:
+.IR /var/log/watchip.log .
+If that path is not writable at startup,
+.B watchip
+falls back to
+.IR "~/.watchip.log" .
+.TP
+.B IPFILE
+IP tracking file. Default:
+.IR /tmp/watchip.txt .
+.SH EXIT STATUS
+.B watchip
+uses the BCS0602 canonical exit-code vocabulary:
+.TP
+.B 0
+Success \- IP checked (initial, changed, or unchanged).
+.TP
+.B 18
+ERR_NODEP \-
+.BR internetip (1)
+dependency unreachable.
+.TP
+.B 22
+ERR_INVAL \- unknown option or unexpected argument. These errors are
+written to stderr only; they do not pollute the operational log.
+.TP
+.B 23
+ERR_NETWORK \- failed to fetch or validate the current IP.
+.SH FILES
+.TP
+.I /var/log/watchip.log
+Default operational log file (when writable by the invoking user).
+.TP
+.I ~/.watchip.log
+Fallback log file when
+.I /var/log/watchip.log
+is not writable.
+.TP
+.I /tmp/watchip.txt
+IP tracking file (default).
+.SH EXAMPLES
+Run from a terminal and display result:
+.PP
+.EX
+watchip
+.EE
+.PP
+Quiet mode, suitable for cron:
+.PP
+.EX
+*/5 * * * * /usr/local/bin/watchip -q
+.EE
+.PP
+Display the operational log:
+.PP
+.EX
+watchip --log
+watchip -l
+watchip log
+.EE
+.PP
+Use as a Bash module with a custom tracking file:
+.PP
+.EX
+source watchip
+result=$(watch_ip /tmp/myapp_ip.txt)
+case $result in
+  initial:*)   echo "First run: ${result#initial:}" ;;
+  changed:*)   echo "IP changed" ;;
+  unchanged:*) echo "IP unchanged" ;;
+esac
+.EE
+.SH SEE ALSO
+.BR internetip (1),
+.BR validip (1),
+.BR logger (1),
+.BR crontab (5),
+.BR syslog (3)
+.SH AUTHOR
+Biksu Okusi <biksu@okusi.id>

@@ -1,53 +1,32 @@
 #!/bin/bash
-# Bash completion for internetip, validip, and watchip scripts
+# Bash completion for internetip
 
 _internetip() {
-  local cur
+  local -- cur prev
   COMPREPLY=()
-  cur="${COMP_WORDS[COMP_CWORD]}"
+  cur=${COMP_WORDS[COMP_CWORD]}
+  prev=${COMP_WORDS[COMP_CWORD-1]}
 
-  # Commands (subcommand style)
-  local commands="install update uninstall seturl showurl unseturl"
-  # Options
-  local opts="-s -c --call-url -v --verbose -q --quiet -h --help -V --version"
-  # Long option equivalents of commands
-  local long_cmds="--install --update --uninstall --set-url --show-url --unset-url"
+  # Subcommand-style verbs (first non-option argument)
+  local -- commands='install update uninstall seturl showurl unseturl'
 
-  # If current word starts with -, complete options
+  # Short and long options
+  local -- opts='-s -c -v -q -h -V --call-url --verbose --quiet --help --version'
+
+  # Long-option equivalents of the subcommands
+  local -- long_cmds='--install --update --uninstall --set-url --show-url --unset-url'
+
+  # seturl accepts a URL argument; no meaningful completion for URLs
+  case $prev in
+    seturl|--set-url) return 0 ;;
+  esac
+
   if [[ $cur == -* ]]; then
     mapfile -t COMPREPLY < <(compgen -W "$opts $long_cmds" -- "$cur")
-  # If no command yet given (first non-option arg), complete commands
-  elif ((COMP_CWORD == 1)); then
-    mapfile -t COMPREPLY < <(compgen -W "$commands" -- "$cur")
-  fi
-}
-
-_validip() {
-  local cur opts
-  COMPREPLY=()
-  cur="${COMP_WORDS[COMP_CWORD]}"
-  opts="-h --help -V --version"
-
-  if [[ $cur == -* ]]; then
-    mapfile -t COMPREPLY < <(compgen -W "$opts" -- "$cur")
-  fi
-}
-
-_watchip() {
-  local cur opts commands
-  COMPREPLY=()
-  cur="${COMP_WORDS[COMP_CWORD]}"
-  opts="-l --log -q --quiet -h --help -V --version"
-  commands="log"
-
-  if [[ $cur == -* ]]; then
-    mapfile -t COMPREPLY < <(compgen -W "$opts" -- "$cur")
   elif ((COMP_CWORD == 1)); then
     mapfile -t COMPREPLY < <(compgen -W "$commands" -- "$cur")
   fi
 }
 
 complete -F _internetip internetip
-complete -F _validip validip
-complete -F _watchip watchip
 #fin

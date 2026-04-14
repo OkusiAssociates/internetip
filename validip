@@ -84,10 +84,7 @@ valid_ip() {
 }
 
 # --- source fence ---
-[[ ${BASH_SOURCE[0]} == "$0" ]] || {
-  declare -fx valid_ip valid_ip4 valid_ip6
-  return 0
-}
+[[ ${BASH_SOURCE[0]} == "$0" ]] || { declare -fx valid_ip valid_ip4 valid_ip6; return 0; }
 
 # --- script mode ---
 set -euo pipefail
