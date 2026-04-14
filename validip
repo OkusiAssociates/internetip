@@ -1,74 +1,162 @@
 #!/usr/bin/env bash
-# Validate IPv4 address format
+# Validate IPv4 and IPv6 address format
 
-valid_ip() {
+valid_ip4() {
   local -- ip=${1:-}
-  [[ $ip =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]] || return 1
+  # Reject leading zeros (e.g. 010.x.x.x) — bash arithmetic would treat as octal
+  [[ $ip =~ ^(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})$ ]] || return 1
   local -- IFS='.'
-  local -ai octets
-  #shellcheck disable=SC2206
-  octets=( $ip )
+  #shellcheck disable=SC2206  # intentional: IFS='.' set locally; $ip splits on dots
+  local -ai octets=( $ip )
   ((octets[0] <= 255 && octets[1] <= 255 && octets[2] <= 255 && octets[3] <= 255 ))
 }
-valid_ip4() { valid_ip "$@"; }
-valid_ip6() { return 1; } # placeholder
-declare -fx valid_ip valid_ip4 valid_ip6
 
-# Check if the script is being sourced or executed directly
-[[ "${BASH_SOURCE[0]}" == "${0}" ]] || return 0
-#!/bin/bash #semantic ----------------------------------------------------------
+valid_ip6() {
+  local -- ip=${1:-}
+  [[ -n $ip ]] || return 1
+
+  # Strip zone ID (e.g. fe80::1%eth0)
+  [[ ! $ip == *%* ]] || ip=${ip%%"%"*}
+  [[ -n $ip ]] || return 1
+
+  # Reject three-or-more consecutive colons
+  [[ ! $ip == *:::* ]] || return 1
+
+  # Reject more than one "::" zero-compression
+  local -- check=${ip/::/}
+  [[ ! $check == *::* ]] || return 1
+
+  # Handle IPv4 embedded in last 32 bits (e.g. ::ffff:1.2.3.4)
+  if [[ $ip =~ ^(.*):([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3})$ ]]; then
+    # Capture before calling valid_ip4 — BASH_REMATCH is global
+    local -- _v6pfx=${BASH_REMATCH[1]} _v4=${BASH_REMATCH[2]}
+    valid_ip4 "$_v4" || return 1
+    ip=${_v6pfx}:0:0
+  elif [[ $ip == *.* ]]; then
+    return 1
+  fi
+
+  local -i compressed=0
+  [[ ! $ip == *::* ]] || compressed=1
+
+  # Leading/trailing single colon only legal as part of "::"
+  [[ $ip != :* || $ip == ::* ]] || return 1
+  [[ $ip != *: || $ip == *:: ]] || return 1
+
+  # "::" alone = all-zero address
+  [[ ! $ip == '::' ]] || return 0
+
+  # Trim leading/trailing "::" so split yields clean hextets
+  [[ ! $ip == ::* ]] || ip=${ip#::}
+  [[ ! $ip == *:: ]] || ip=${ip%::}
+
+  local -a parts=()
+  local -- IFS=':'
+  read -ra parts <<< "$ip"
+
+  local -i count=0
+  local -- seg
+  for seg in "${parts[@]}"; do
+    if [[ -z $seg ]]; then
+      (( compressed )) || return 1
+    else
+      [[ $seg =~ ^[0-9a-fA-F]{1,4}$ ]] || return 1
+      count+=1
+    fi
+  done
+
+  if (( compressed )); then
+    (( count < 8 )) || return 1
+  else
+    (( count == 8 )) || return 1
+  fi
+  return 0
+}
+
+valid_ip() {
+  [[ -n ${1:-} ]] || return 1
+  local -- ip=$1
+  if [[ $ip == *:* ]]; then
+    valid_ip6 "$ip"
+  else
+    valid_ip4 "$ip"
+  fi
+}
+
+# --- source fence ---
+[[ ${BASH_SOURCE[0]} == "$0" ]] || {
+  declare -fx valid_ip valid_ip4 valid_ip6
+  return 0
+}
+
+# --- script mode ---
 set -euo pipefail
-shopt -s inherit_errexit shift_verbose extglob nullglob
+shopt -s inherit_errexit
 
-declare -r VERSION=1.1.0
-declare -r SCRIPT_NAME=validip
+declare -r VERSION=1.2.0 SCRIPT_NAME=validip
 
-if (($#)); then
-  case $1 in
-    -h|--help)
-      cat <<HELP
-$SCRIPT_NAME $VERSION - Validate IPv4 address format
+die() { >&2 printf '%s: ✗ %s\n' "$SCRIPT_NAME" "${*:2}"; exit "$1"; }
+
+declare -- ip=''
+while (($#)); do case $1 in
+  -h|--help)
+    cat <<HELP
+$SCRIPT_NAME $VERSION - Validate IPv4 and IPv6 address format
 
 Usage: $SCRIPT_NAME [options] <ip_address>
-       source $SCRIPT_NAME  # Load valid_ip function
+       source $SCRIPT_NAME  # Load valid_ip functions
 
 Options:
   -h, --help    Display this help
   -V, --version Display version
 
 Exported Functions (when sourced):
-  valid_ip <ip>   Returns 0 if valid IPv4, 1 if invalid
+  valid_ip  <ip>  Returns 0 if valid IPv4 or IPv6, 1 otherwise
+  valid_ip4 <ip>  Returns 0 if valid IPv4, 1 otherwise
+  valid_ip6 <ip>  Returns 0 if valid IPv6, 1 otherwise
 
 Validation:
-  - Checks format: N.N.N.N where N is 0-255
-  - Validates each octet is within range
+  IPv4: N.N.N.N where N is 0-255
+  IPv6: standard form, zero-compression (::), IPv4-mapped
+        (::ffff:1.2.3.4), and zone IDs (fe80::1%eth0)
+
+  Script mode auto-detects family by presence of ':' vs '.'.
 
 Exit Codes:
-  0   Valid IPv4 address
-  1   Invalid IPv4 address
+  0   Valid IP address
+  1   Invalid IP address
   22  Invalid option (EINVAL)
 
 Examples:
-  $SCRIPT_NAME 192.168.1.1 && echo valid || echo invalid
-  $SCRIPT_NAME 256.1.1.1 && echo valid || echo invalid
+  $SCRIPT_NAME 192.168.1.1          && echo valid || echo invalid
+  $SCRIPT_NAME 2001:db8::1          && echo valid || echo invalid
+  $SCRIPT_NAME ::ffff:192.168.1.1   && echo valid || echo invalid
+  $SCRIPT_NAME fe80::1%eth0         && echo valid || echo invalid
 
   source $SCRIPT_NAME
-  if valid_ip "\$ip"; then echo "Valid"; fi
+  if valid_ip "\$ip";  then echo "Valid IPv4 or IPv6"; fi
+  if valid_ip6 "\$ip"; then echo "Valid IPv6 only";    fi
 HELP
-      exit 0
-      ;;
-    -V|--version)
-      echo "$SCRIPT_NAME $VERSION"
-      exit 0
-      ;;
-    -*)
-      >&2 echo "$SCRIPT_NAME: ✗ Unknown option ${1@Q}"
-      exit 22
-      ;;
-  esac
-fi
+    exit 0 ;;
+  -V|--version)
+    printf '%s %s\n' "$SCRIPT_NAME" "$VERSION"; exit 0 ;;
+  -[Vh]?*)
+    set -- "${1:0:2}" "-${1:2}" "${@:2}"; continue ;;
+  --)
+    shift
+    if (($#)); then
+      [[ -z $ip ]] || die 22 'Too many arguments'
+      ip=$1
+    fi
+    break ;;
+  -*)
+    die 22 "Unknown option ${1@Q}" ;;
+  *)
+    [[ -z $ip ]] || die 22 'Too many arguments'
+    ip=$1 ;;
+esac; shift; done
 
-(($#)) || { >&2 echo "$SCRIPT_NAME: ✗ Missing IP address"; exit 22; }
+[[ -n $ip ]] || die 22 'Missing IP address'
 
-valid_ip "$1"
+valid_ip "$ip"
 #fin

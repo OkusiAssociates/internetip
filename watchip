@@ -1,19 +1,11 @@
 #!/usr/bin/env bash
 # Monitor and log public IP address changes
 
-# Source get_internet_ip function if not already available
-if ! declare -F get_internet_ip &>/dev/null; then
-  #shellcheck disable=SC1091 source=internetip
-  source "${BASH_SOURCE[0]%/*}"/internetip 2>/dev/null || {
-    source internetip 2>/dev/null || {
-      >&2 echo 'watchip: error: Cannot source internetip module'
-      #shellcheck disable=SC2317
-      return 1 2>/dev/null || exit 1
-    }
-  }
-fi
-
 watch_ip() {
+  # Lazy-load internetip dependency — avoids polluting the caller's namespace
+  # when watchip is sourced. Script mode also sources below the fence so
+  # startup failures surface early; this path only fires for sourced callers.
+  declare -F get_internet_ip &>/dev/null || source internetip 2>/dev/null || return 18
   local -- ipfile=${1:-/tmp/internetip.txt}
   local -- oldip curip
 
@@ -29,23 +21,31 @@ watch_ip() {
   oldip=$(<"$ipfile")
   curip=$(get_internet_ip) || return 1
 
-  if [[ "$oldip" != "$curip" ]]; then
+  if [[ $oldip != "$curip" ]]; then
     echo "$curip" > "$ipfile"
     echo "changed:$oldip:$curip"
   else
     echo "unchanged:$curip"
   fi
 }
-declare -fx watch_ip
 
-# Check if the script is being sourced or executed directly
-[[ "${BASH_SOURCE[0]}" == "${0}" ]] || return 0
-#!/bin/bash #semantic ----------------------------------------------------------
+# --- source fence ---
+[[ ${BASH_SOURCE[0]} == "$0" ]] || { declare -fx watch_ip; return 0; }
+
+# --- script mode only below ---
 set -euo pipefail
-shopt -s inherit_errexit shift_verbose extglob nullglob
+shopt -s inherit_errexit
+
+# Load internetip for get_internet_ip in script mode (sourced callers get the
+# lazy load inside watch_ip itself — see W1/W1b resolution).
+source internetip || {
+  >&2 printf '%s: ✗ %s\n' "$(basename -- "$0")" \
+      'Command internetip not found; check installation'
+  exit 18
+}
 
 declare -r VERSION=2.1.0
-#shellcheck disable=SC2155
+#shellcheck disable=SC2155  # realpath failure would be fatal; downstream empty-name checks would surface it
 declare -r SCRIPT_PATH=$(realpath -e -- "$0")
 declare -r SCRIPT_NAME=${SCRIPT_PATH##*/}
 
@@ -61,20 +61,22 @@ if [[ -z $LOGFILE ]]; then
 fi
 
 log_msg() {
-  local -- ts
-  ts=$(date '+%Y-%m-%d %H:%M:%S')
-  echo "$ts $USER: $*" >> "$LOGFILE" 2>/dev/null || true
+  printf '%(%F %T)T %s: %s\n' -1 "$USER" "$*" >> "$LOGFILE" ||:
 }
 
 log_sys() { ((EUID)) || logger -t "$SCRIPT_NAME" -p local0.notice "$@"; log_msg "$@"; echo "$@"; }
 log_err() { ((EUID)) || logger -t "$SCRIPT_NAME" -p local0.err "ERROR: $*"; log_msg "ERROR: $*"; >&2 echo "$@"; }
-log_die() { log_err "$@"; exit 1; }
+# Operational death — logs to syslog/logfile. Use for runtime failures worth recording.
+log_die() { log_err "${@:2}"; exit "${1:-1}"; }
+# Plain death — stderr only, no logfile write. Use for argparse/usage errors
+# so user typos don't pollute the operational log.
+die() { >&2 printf '%s: ✗ %s\n' "$SCRIPT_NAME" "${*:2}"; exit "${1:-1}"; }
 
 do_log() {
   if [[ -f $LOGFILE && -r $LOGFILE ]]; then
     cat "$LOGFILE"
   else
-    >&2 echo "$SCRIPT_NAME: Cannot read log: $LOGFILE"
+    >&2 printf '%s: %s\n' "$SCRIPT_NAME" "Cannot read log ${LOGFILE@Q}"
     return 1
   fi
 }
@@ -94,7 +96,8 @@ Options:
 
 Exported Functions (when sourced):
   watch_ip [file]   Compare stored vs current IP
-                    Returns: "changed:old:new" or "unchanged:ip"
+                    Returns: "initial:ip" (first run, no IPFILE yet),
+                             "changed:old:new", or "unchanged:ip"
 
 Behavior:
   - Logs to syslog when run as root (local0.notice)
@@ -105,7 +108,7 @@ Behavior:
 Environment:
   LOGFILE       Log file (default: /var/log/watchip.log,
                 falls back to ~/.watchip.log if not writable)
-  IPFILE        IP tracking file (default: /tmp/internetip.txt)
+  IPFILE        IP tracking file (default: /tmp/$SCRIPT_NAME.txt)
 
 Exit Codes:
   0   Success (IP checked)
@@ -127,7 +130,8 @@ HELP
 }
 
 main() {
-  local -- quiet=0 result oldip curip
+  local -i quiet=0
+  local -- result oldip curip
 
   # Parse options
   while (($#)); do
@@ -136,31 +140,31 @@ main() {
       -V|--version) echo "$SCRIPT_NAME $VERSION"; return 0 ;;
       -l|--log|log) do_log; return $? ;;
       -q|--quiet)   quiet=1 ;;
-      -*)           log_die "Unknown option ${1@Q}. Try: $SCRIPT_NAME --help" ;;
-      *)            log_die "Unexpected argument ${1@Q}" ;;
+      -*)           die 22 "Unknown option ${1@Q}. Try: $SCRIPT_NAME --help" ;;
+      *)            die 22 "Unexpected argument ${1@Q}" ;;
     esac
     shift
   done
 
   # Watch for changes
-  result=$(watch_ip "$IPFILE") || log_die 'Error checking IP'
+  result=$(watch_ip "$IPFILE") || log_die 23 'Error checking IP'
 
   if [[ $result == initial:* ]]; then
     # First run: initial:ip
     curip=${result#initial:}
-    log_sys "Initial IP: $curip"
+    log_sys "Initial IP ${curip@Q}"
   elif [[ $result == changed:* ]]; then
     # Parse result: changed:oldip:newip
     oldip=${result#changed:}
     curip=${oldip#*:}
     oldip=${oldip%%:*}
     # Store to remote and log
-    internetip -s >/dev/null 2>&1 || true
-    log_sys "IP changed from $oldip to $curip"
+    internetip -s &>/dev/null ||:
+    log_sys "IP changed from ${oldip@Q} to ${curip@Q}"
   else
     # unchanged:ip
     curip=${result#unchanged:}
-    ((quiet)) || echo "IP unchanged: $curip"
+    ((quiet)) || echo "IP unchanged ${curip@Q}"
   fi
 }
 

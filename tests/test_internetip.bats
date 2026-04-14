@@ -239,21 +239,21 @@ load 'helpers/setup'
 @test "--install requires root" {
   skip_if_root
   run "$BATS_TEST_DIRNAME/../internetip" --install
-  [ "$status" -eq 1 ]
+  [ "$status" -eq 13 ]
   [[ "$output" == *"requires root"* ]]
 }
 
 @test "--update requires root" {
   skip_if_root
   run "$BATS_TEST_DIRNAME/../internetip" --update
-  [ "$status" -eq 1 ]
+  [ "$status" -eq 13 ]
   [[ "$output" == *"requires root"* ]]
 }
 
 @test "--uninstall requires root" {
   skip_if_root
   run "$BATS_TEST_DIRNAME/../internetip" --uninstall
-  [ "$status" -eq 1 ]
+  [ "$status" -eq 13 ]
   [[ "$output" == *"requires root"* ]]
 }
 
@@ -352,14 +352,14 @@ load 'helpers/setup'
 @test "--set-url requires root" {
   skip_if_root
   run "$BATS_TEST_DIRNAME/../internetip" --set-url
-  [ "$status" -eq 1 ]
+  [ "$status" -eq 13 ]
   [[ "$output" == *"Requires root"* ]]
 }
 
 @test "--unset-url requires root" {
   skip_if_root
   run "$BATS_TEST_DIRNAME/../internetip" --unset-url
-  [ "$status" -eq 1 ]
+  [ "$status" -eq 13 ]
   [[ "$output" == *"Requires root"* ]]
 }
 
@@ -409,7 +409,7 @@ load 'helpers/setup'
   # Use non-existent profile file to test "not configured" scenario
   run env -u INTERNETIP_CALL_URL INTERNETIP_PROFILE=/nonexistent/profile.sh \
       "$BATS_TEST_DIRNAME/../internetip" -s
-  [ "$status" -eq 1 ]
+  [ "$status" -eq 19 ]
   [[ "$output" == *"INTERNETIP_CALL_URL not set"* ]]
   [[ "$output" == *"--set-url"* ]]
 }

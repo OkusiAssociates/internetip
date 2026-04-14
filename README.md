@@ -4,10 +4,10 @@ Bash toolkit for public IP address management. Detect your internet-facing IP, v
 
 ## Scripts
 
-| Script | Version | Purpose | Exported Function |
-|--------|---------|---------|-------------------|
+| Script | Version | Purpose | Exported Functions |
+|--------|---------|---------|--------------------|
 | `internetip` | 2.3.0 | Fetch and display public IP | `get_internet_ip` |
-| `validip` | 1.1.0 | Validate IPv4 address format | `valid_ip` |
+| `validip` | 1.2.0 | Validate IPv4 and IPv6 address format | `valid_ip`, `valid_ip4`, `valid_ip6` |
 | `watchip` | 2.1.0 | Monitor for IP changes | `watch_ip` |
 
 All scripts follow the [BASH-CODING-STANDARD](https://github.com/Open-Technology-Foundation/bash-coding-standard) and support dual-purpose usage (executable or sourceable as a module).
@@ -84,6 +84,7 @@ The callback URL supports template variables expanded at runtime. The `$` prefix
 |----------|-------------|---------|
 | `HOSTNAME` | System hostname | `webserver01` |
 | `GATEWAY_IP` | Fetched public IP | `203.0.113.45` |
+| `WIFI` | Active Wi-Fi SSID (via `iwgetid`/`nmcli`, falls back to `HOSTNAME`) | `MyNetwork` |
 | `SCRIPT_NAME` | Script name | `internetip` |
 | `VERSION` | Script version | `2.3.0` |
 
@@ -122,15 +123,37 @@ The server decodes `%26` back to `&` automatically.
 
 When run as root, caches result to `GATEWAY_IP_FILE`.
 
+All HTTP requests use curl with automatic retry (3 attempts, 5-second delay) for resilience against transient network errors.
+
 **Output icons:** Messages use status icons for clarity: ◉ info, ▲ warn, ✓ success, ✗ error.
 
 ### validip
 
+Validates both IPv4 and IPv6 addresses. Script mode auto-detects the family by the presence of `:` (IPv6) vs `.` (IPv4).
+
 ```bash
-validip 192.168.1.1 && echo valid || echo invalid
-validip 256.1.1.1 && echo valid || echo invalid
+# IPv4
+validip 192.168.1.1             && echo valid || echo invalid
+validip 256.1.1.1               && echo valid || echo invalid
+
+# IPv6
+validip ::1                     && echo valid || echo invalid
+validip 2001:db8::1             && echo valid || echo invalid
+validip ::ffff:192.168.1.1      && echo valid || echo invalid  # IPv4-mapped
+validip fe80::1%eth0            && echo valid || echo invalid  # zone ID
+
 validip -h                      # Show help
 ```
+
+**Supported IPv6 forms:** full 8-hextet, zero-compression (`::`), IPv4-mapped (`::ffff:1.2.3.4`), IPv4-embedded (`2001:db8::1.2.3.4`), and zone IDs (`fe80::1%eth0`).
+
+**Exported functions when sourced:**
+
+| Function | Accepts |
+|----------|---------|
+| `valid_ip <ip>` | IPv4 or IPv6 (auto-dispatched by presence of `:`) |
+| `valid_ip4 <ip>` | IPv4 only |
+| `valid_ip6 <ip>` | IPv6 only |
 
 **Exit Codes:** 0 = valid, 1 = invalid, 22 = missing argument or invalid option
 
@@ -202,7 +225,8 @@ watchip ──sources──> internetip ──sources──> validip
 
 | Dependency | Used By | Purpose |
 |------------|---------|---------|
-| `curl` | internetip | HTTP requests to ipecho.net |
+| `curl` | internetip | HTTP requests to ipecho.net (with retry logic) |
+| `iwgetid` or `nmcli` | internetip | Resolve `$WIFI` template variable (optional; falls back to `HOSTNAME`) |
 | `logger` | watchip | Syslog integration |
 | Bash 4.0+ | All | Shell interpreter |
 | `bats-core` | tests | Test framework (optional) |
@@ -228,12 +252,13 @@ sudo bats tests/            # Root-required tests
 
 | Test File | Tests | Coverage |
 |-----------|-------|----------|
-| `test_validip.bats` | 21 | IP validation, CLI options, sourcing |
+| `test_validip.bats` | 50 | IPv4 + IPv6 validation, family dispatch, CLI options, sourcing |
 | `test_internetip.bats` | 56 | Network fetch, caching, verbose/quiet, install/update/uninstall, URL config |
 | `test_watchip.bats` | 30 | Change detection, logging, file ops |
 
-**Total: 107 tests** covering:
-- Valid/invalid IP formats
+**Total: 136 tests** covering:
+- Valid/invalid IPv4 and IPv6 formats
+- IPv6 zero-compression, zone IDs, IPv4-mapped/embedded
 - Executable mode (options, exit codes)
 - Sourced mode (function exports, no side effects)
 - Root vs non-root behavior

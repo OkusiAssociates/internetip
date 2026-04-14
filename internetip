@@ -1,53 +1,40 @@
 #!/usr/bin/env bash
 # Fetch and validate public internet IP address
 
-# Source valid_ip function if not already available
-if ! declare -F valid_ip &>/dev/null; then
-  #shellcheck disable=SC1091 source=validip
-  source "${BASH_SOURCE[0]%/*}/validip" 2>/dev/null || {
-    # Inline fallback if validip not found
-    valid_ip() {
-      local -- ip="${1:-}"
-      [[ $ip =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]] || return 1
-      local -- IFS='.'
-      local -ai octets
-      #shellcheck disable=SC2206
-      octets=( $ip )
-      [[ ${octets[0]} -le 255 && ${octets[1]} -le 255 \
-          && ${octets[2]} -le 255 && ${octets[3]} -le 255 ]]
-    }
-  }
-fi
+# Source valid_ip function
+source validip || {
+  >&2 printf '%s: ✗ %s\n' "$(basename -- "$0")" 'Command validip not found; check installation'
+  # Return when sourced, exit when executed — avoid killing caller shell
+  [[ ${BASH_SOURCE[0]} == "$0" ]] && exit 18 || return 18
+}
 
 get_internet_ip() {
   local -- ip
-  ip=$(curl -4sf --max-time 10 'http://ipecho.net/plain' 2>/dev/null | head -n1)
+  ip=$(curl -4sf --max-time 10 --retry 3 --retry-delay 5 --retry-all-errors 'http://ipecho.net/plain' 2>/dev/null | head -n1)
   valid_ip "$ip" || return 1
   echo "$ip"
 }
-internetip() { get_internet_ip "$@"; }
-declare -fx get_internet_ip internetip
 
+internetip() { get_internet_ip "$@"; }
 
 # Check if the script is being sourced or executed directly
-[[ "${BASH_SOURCE[0]}" == "${0}" ]] || return 0
-#!/bin/bash #semantic ----------------------------------------------------------
+[[ ${BASH_SOURCE[0]} == "$0" ]] || { declare -fx get_internet_ip internetip; return 0; }
+
 set -euo pipefail
-shopt -s inherit_errexit extglob nullglob
+shopt -s inherit_errexit
 
-VERSION=2.3.0
-SCRIPT_PATH=$(realpath -e -- "$0")
-SCRIPT_DIR=${SCRIPT_PATH%/*}
-SCRIPT_NAME=${SCRIPT_PATH##*/}
+declare -rx PATH=/usr/local/bin:/usr/bin:/bin
 
-GATEWAY_IP_FILE=${GATEWAY_IP_FILE:-/tmp/GatewayIP}
-INTERNETIP_PROFILE=${INTERNETIP_PROFILE:-/etc/profile.d/"$SCRIPT_NAME".sh}
+declare -r VERSION=2.3.0
+#shellcheck disable=SC2155
+declare -r SCRIPT_PATH=$(realpath -e -- "$0")
+declare -r SCRIPT_DIR=${SCRIPT_PATH%/*} SCRIPT_NAME=${SCRIPT_PATH##*/}
 
-#shellcheck disable=SC2034
-readonly -- VERSION SCRIPT_PATH SCRIPT_DIR SCRIPT_NAME GATEWAY_IP_FILE INTERNETIP_PROFILE
+declare -r GATEWAY_IP_FILE=${GATEWAY_IP_FILE:-/tmp/GatewayIP}
+declare -r INTERNETIP_PROFILE=${INTERNETIP_PROFILE:-/etc/profile.d/"$SCRIPT_NAME".sh}
 
 declare -- GATEWAY_IP
-GATEWAY_IP=$(head -n1 "$GATEWAY_IP_FILE" 2>/dev/null || true)
+GATEWAY_IP=$(head -n 1 "$GATEWAY_IP_FILE" 2>/dev/null ||:)
 
 # Callback URL template (set via --set-url, no default)
 : "${INTERNETIP_CALL_URL:=}"
@@ -55,26 +42,25 @@ GATEWAY_IP=$(head -n1 "$GATEWAY_IP_FILE" 2>/dev/null || true)
 declare -i VERBOSE=1
 # Color definitions
 if [[ -t 1 && -t 2 ]]; then
-  readonly -- RED=$'\033[0;31m' GREEN=$'\033[0;32m' YELLOW=$'\033[0;33m' CYAN=$'\033[0;36m' NC=$'\033[0m'
+  declare -r RED=$'\033[0;31m' GREEN=$'\033[0;32m' YELLOW=$'\033[0;33m' CYAN=$'\033[0;36m' NC=$'\033[0m'
 else
   VERBOSE=0
-  readonly -- RED='' GREEN='' YELLOW='' CYAN='' NC=''
+  declare -r RED='' GREEN='' YELLOW='' CYAN='' NC=''
 fi
 # Utility functions
 _msg() {
   local -- prefix="$SCRIPT_NAME:" msg
-  case "${FUNCNAME[1]}" in
-    info)    prefix+=" ${CYAN}◉${NC}" ;;
-    warn)    prefix+=" ${YELLOW}▲${NC}" ;;
-    success) prefix+=" ${GREEN}✓${NC}" ;;
-    error)   prefix+=" ${RED}✗${NC}" ;;
+  case ${FUNCNAME[1]} in
+    info)    prefix+=" $CYAN◉$NC" ;;
+    warn)    prefix+=" $YELLOW▲$NC" ;;
+    success) prefix+=" $GREEN✓$NC" ;;
+    error)   prefix+=" $RED✗$NC" ;;
   esac
   for msg in "$@"; do printf '%s %s\n' "$prefix" "$msg"; done
 }
-vecho() { ((VERBOSE)) || return 0; _msg "$@"; }
 info() { ((VERBOSE)) || return 0; >&2 _msg "$@"; }
-warn() { ((VERBOSE)) || return 0; >&2 _msg "$@"; }
-success() { ((VERBOSE)) || return 0; >&2 _msg "$@" || return 0; }
+warn() { >&2 _msg "$@"; }
+success() { ((VERBOSE)) || return 0; >&2 _msg "$@"; }
 error() { >&2 _msg "$@"; }
 die() { (($# < 2)) || error "${@:2}"; exit "${1:-0}"; }
 
@@ -136,12 +122,12 @@ Environment:
 
 Exported Functions (when sourced):
   get_internet_ip   Fetch and validate public IP, returns via stdout
-  valid_ip <ip>     Validate IPv4 address format
+  valid_ip <ip>     Validate IPv4 or IPv6 (auto-dispatched; via validip module)
 
 Notes:
   - Uses ipecho.net to detect public IP
   - Caches result to ${GATEWAY_IP_FILE@Q} when run as root
-  - Uses curl with 10-second timeout
+  - Uses curl with 10-second timeout and retry (3 attempts, 5s delay)
 
 Examples:
   $SCRIPT_NAME                       # Display current public IP
@@ -164,26 +150,26 @@ HELP
 internetip_call_url() {
   if [[ -z ${INTERNETIP_CALL_URL:-} ]]; then
     #shellcheck source=/dev/null
-    source "$INTERNETIP_PROFILE" 2>/dev/null || true
+    source "$INTERNETIP_PROFILE" 2>/dev/null ||:
     [[ -n ${INTERNETIP_CALL_URL:-} ]] \
-        || die 1 'INTERNETIP_CALL_URL not set.' "Run: sudo $SCRIPT_NAME --set-url [url]"
+        || die 19 'INTERNETIP_CALL_URL not set.' "Run: sudo $SCRIPT_NAME --set-url [url]"
   fi
 
   local -- url
   url=$(expand_url_template "$INTERNETIP_CALL_URL" "$1")
   info "Calling ${url@Q}"
-  curl -sfk --max-time 10 "$url" >/dev/null \
-      || die 1 "Error calling ${url@Q}"
+  curl -sf --max-time 10 --retry 3 --retry-delay 5 --retry-all-errors "$url" >/dev/null \
+      || die 23 "Error calling ${url@Q}"
 }
 
 do_install() {
-  ((EUID == 0)) || die 1 'Install requires root.' "Run: sudo $SCRIPT_NAME --install"
+  ((EUID == 0)) || die 13 'Install requires root.' "Run: sudo $SCRIPT_NAME --install"
 
   local -a scripts=(internetip validip watchip)
   local -- script
 
   for script in "${scripts[@]}"; do
-    [[ -x $SCRIPT_DIR/$script ]] || die 1 "Script not found '$SCRIPT_DIR/$script'"
+    [[ -x $SCRIPT_DIR/$script ]] || die 3 "Script not found '$SCRIPT_DIR/$script'"
     ln -sf "$SCRIPT_DIR"/"$script" /usr/local/bin/"$script"
     info "Installed: /usr/local/bin/$script -> '$SCRIPT_DIR/$script'"
   done
@@ -198,13 +184,13 @@ do_install() {
 }
 
 do_update() {
-  ((EUID == 0)) || die 1 'Update requires root.' "Run: sudo $SCRIPT_NAME --update"
+  ((EUID == 0)) || die 13 'Update requires root.' "Run: sudo $SCRIPT_NAME --update"
 
-  cd "$SCRIPT_DIR" || die 1 "Cannot cd to ${SCRIPT_DIR@Q}"
+  cd "$SCRIPT_DIR" || die 3 "Cannot cd to ${SCRIPT_DIR@Q}"
 
-  [[ -d .git ]] || die 1 "Not a git repository ${SCRIPT_DIR@Q}"
+  [[ -d .git ]] || die 21 "Not a git repository ${SCRIPT_DIR@Q}"
 
-  git pull || die 1 'Git pull failed'
+  git pull || die 23 'Git pull failed'
   info 'Updated from git'
 
   # Reinstall if already installed
@@ -214,7 +200,7 @@ do_update() {
 }
 
 do_uninstall() {
-  ((EUID == 0)) || die 1 'Uninstall requires root.' "Run: sudo $SCRIPT_NAME --uninstall"
+  ((EUID == 0)) || die 13 'Uninstall requires root.' "Run: sudo $SCRIPT_NAME --uninstall"
 
   rm -f /usr/local/bin/{internetip,validip,watchip}
   rm -f /etc/bash_completion.d/internetip
@@ -223,7 +209,7 @@ do_uninstall() {
 }
 
 do_set_url() {
-  ((EUID == 0)) || die 1 'Requires root.' "Run: sudo $SCRIPT_NAME --set-url"
+  ((EUID == 0)) || die 13 'Requires root.' "Run: sudo $SCRIPT_NAME --set-url"
 
   local -- url=${1:-}
   local -- current=${INTERNETIP_CALL_URL:-}
@@ -236,25 +222,28 @@ do_set_url() {
     read -r -p '> ' url
     # Use current if user just presses Enter, but require input if none exists
     if [[ -z $url ]]; then
-      [[ -n $current ]] || die 1 'No URL provided and no existing URL configured'
+      [[ -n $current ]] || die 19 'No URL provided and no existing URL configured'
       url=$current
     fi
   fi
 
+  # Escape URL for embedding inside single-quoted shell strings.
+  # Replaces each ' with '\'' (close quote, literal quote, reopen quote).
+  local -- sq_url=${url//\'/\'\\\'\'}
+
   # Write "$INTERNETIP_PROFILE" (stores template unexpanded)
   cat > "$INTERNETIP_PROFILE" << EOF
 # internetip callback URL template - variables expanded at runtime
-export INTERNETIP_CALL_URL='$url'
+export INTERNETIP_CALL_URL='$sq_url'
 EOF
   chmod 644 "$INTERNETIP_PROFILE"
   info "Written: $INTERNETIP_PROFILE"
 
-  # Write systemd generator - escape $ to prevent expansion when generator runs
+  # Write systemd generator (emits KEY=VALUE on stdout for systemd to capture)
   mkdir -p /etc/systemd/system-environment-generators
-  local -- escaped_url=${url//\$/\\\$}
   cat > /etc/systemd/system-environment-generators/internetip << EOT
 #!/usr/bin/env bash
-echo "INTERNETIP_CALL_URL=$escaped_url"
+printf '%s\n' 'INTERNETIP_CALL_URL=$sq_url'
 EOT
   chmod 755 /etc/systemd/system-environment-generators/internetip
   info 'Written: /etc/systemd/system-environment-generators/internetip'
@@ -275,11 +264,11 @@ do_show_url() {
 }
 
 do_unset_url() {
-  ((EUID == 0)) || die 1 'Requires root.' "Run: sudo $SCRIPT_NAME --unset-url"
+  ((EUID == 0)) || die 13 'Requires root.' "Run: sudo $SCRIPT_NAME --unset-url"
 
   rm -f "$INTERNETIP_PROFILE"
   rm -f /etc/systemd/system-environment-generators/internetip
-  systemctl daemon-reload 2>/dev/null || true
+  systemctl daemon-reload 2>/dev/null ||:
 
   success 'URL configuration removed'
 }
@@ -291,34 +280,37 @@ main() {
   while (($#)); do
     case $1 in
       install|--install)
-                    do_install; return 0 ;;
+        do_install; return 0 ;;
       update|--update)
-                    do_update; return 0 ;;
+        do_update; return 0 ;;
       uninstall|--uninstall)
-                    do_uninstall; return 0 ;;
+        do_uninstall; return 0 ;;
 
       seturl=*|--set-url=*)
-                    do_set_url "${1#*=}"; return 0 ;;
+        do_set_url "${1#*=}"; return 0 ;;
       seturl|--set-url)
-                    # Check if next arg exists and is not an option
-                    if [[ -n ${2:-} && $2 != -* ]]; then
-                      do_set_url "$2"; return 0
-                    fi
-                    do_set_url; return 0 ;;
+        # Check if next arg exists and is not an option
+        if [[ -n ${2:-} && $2 != -* ]]; then
+          do_set_url "$2"; return 0
+        fi
+        do_set_url; return 0 ;;
       showurl|--show-url)
-                    do_show_url; return 0 ;;
+        do_show_url; return 0 ;;
       unseturl|--unset-url)
-                    do_unset_url; return 0 ;;
+        do_unset_url; return 0 ;;
 
       -s|-c|--call-url)
-                    call_url=1 ;;
+        call_url=1 ;;
 
       -v|--verbose) VERBOSE+=1 ;;
       -q|--quiet)   VERBOSE=0 ;;
+
       -V|--version) echo "$SCRIPT_NAME $VERSION"; return 0 ;;
       -h|--help)    show_help; return 0 ;;
-      -[svqVh]*) #shellcheck disable=SC2046
-                    set -- '' $(printf -- '-%c ' $(grep -o . <<<"${1:1}")) "${@:2}" ;;
+
+      --)           shift; break ;;
+      -[csvqVh]?*)  set -- "${1:0:2}" "-${1:2}" "${@:2}"; continue ;;
+
       -*)           die 22 "Unknown option ${1@Q}." "Run: $SCRIPT_NAME --help" ;;
       *)            die 22 "Unexpected argument ${1@Q}" ;;
     esac
@@ -326,7 +318,7 @@ main() {
   done
 
   # Fetch and validate IP
-  GATEWAY_IP=$(get_internet_ip) || die 1 'Failed to retrieve valid IP'
+  GATEWAY_IP=$(get_internet_ip) || die 23 'Failed to retrieve valid IP'
 
   # Cache to file if root
   if ((EUID == 0)); then

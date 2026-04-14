@@ -164,7 +164,7 @@ load 'helpers/mocks'
 
 @test "watchip returns 22 for unknown option" {
   run "$BATS_TEST_DIRNAME/../watchip" --invalid-option
-  [ "$status" -eq 1 ]
+  [ "$status" -eq 22 ]
   [[ "$output" == *"Unknown option"* ]]
 }
 
@@ -204,22 +204,26 @@ load 'helpers/mocks'
   [[ "$output" == *"Cannot read log"* ]]
 }
 
-@test "watchip creates log entry on error" {
-  local logfile="$TEST_TMPDIR/error_log_$$.log"
+@test "watchip argparse errors do not pollute the log file" {
+  # W6: usage errors go through die(), not log_die() — operational log stays clean
+  local logfile="$TEST_TMPDIR/noerror_log_$$.log"
   rm -f "$logfile"
   LOGFILE="$logfile" run "$BATS_TEST_DIRNAME/../watchip" --invalid-opt
-  [ "$status" -eq 1 ]
-  [ -f "$logfile" ]
-  [[ "$(cat "$logfile")" == *"ERROR:"* ]]
+  [ "$status" -eq 22 ]
+  [[ "$output" == *"Unknown option"* ]]
+  [ ! -f "$logfile" ]
 }
 
 @test "watchip log format is timestamp user: message" {
+  # Use the initial-IP flow (test 131 territory) to exercise log_msg format
   local logfile="$TEST_TMPDIR/format_log_$$.log"
-  rm -f "$logfile"
-  LOGFILE="$logfile" run "$BATS_TEST_DIRNAME/../watchip" --bad-option
+  local ipfile="$TEST_TMPDIR/format_ip_$$.txt"
+  rm -f "$logfile" "$ipfile"
+  LOGFILE="$logfile" IPFILE="$ipfile" run "$BATS_TEST_DIRNAME/../watchip"
+  [ "$status" -eq 0 ]
   [ -f "$logfile" ]
-  # Format: YYYY-MM-DD HH:MM:SS username: ERROR: message
-  [[ "$(cat "$logfile")" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}\ [0-9]{2}:[0-9]{2}:[0-9]{2}\ [a-z]+:\ ERROR: ]]
+  # Format: YYYY-MM-DD HH:MM:SS username: Initial IP ...
+  [[ "$(cat "$logfile")" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}\ [0-9]{2}:[0-9]{2}:[0-9]{2}\ [a-z_][a-z0-9_-]*:\ Initial\ IP ]]
 }
 
 @test "watchip LOGFILE env var overrides default" {
@@ -240,7 +244,7 @@ load 'helpers/mocks'
   LOGFILE="$logfile" IPFILE="$ipfile" run "$BATS_TEST_DIRNAME/../watchip"
   [ "$status" -eq 0 ]
   [ -f "$logfile" ]
-  [[ "$(cat "$logfile")" == *"Initial IP:"* ]]
+  [[ "$(cat "$logfile")" == *"Initial IP "* ]]
 }
 
 # =============================================================================
