@@ -308,7 +308,7 @@ main() {
       -v|--verbose) VERBOSE+=1 ;;
       -q|--quiet)   VERBOSE=0 ;;
 
-      -V|--version) echo "$SCRIPT_NAME $VERSION"; return 0 ;;
+      -V|--version) printf '%s %s\n' "$SCRIPT_NAME" "$VERSION"; return 0 ;;
       -h|--help)    show_help; return 0 ;;
 
       --)           shift; break ;;
@@ -326,7 +326,7 @@ main() {
   # Cache to file if root
   if ((EUID == 0)); then
     echo "$GATEWAY_IP" > "$GATEWAY_IP_FILE"
-    chmod 666 "$GATEWAY_IP_FILE"
+    chmod 664 "$GATEWAY_IP_FILE"
   fi
 
   echo "$GATEWAY_IP"

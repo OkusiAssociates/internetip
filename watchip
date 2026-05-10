@@ -137,7 +137,7 @@ main() {
   while (($#)); do
     case $1 in
       -h|--help)    show_help; return 0 ;;
-      -V|--version) echo "$SCRIPT_NAME $VERSION"; return 0 ;;
+      -V|--version) printf '%s %s\n' "$SCRIPT_NAME" "$VERSION"; return 0 ;;
       -l|--log|log) do_log; return $? ;;
       -q|--quiet)   quiet=1 ;;
       -*)           die 22 "Unknown option ${1@Q}. Try: $SCRIPT_NAME --help" ;;
